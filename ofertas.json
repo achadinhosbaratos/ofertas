@@ -2,6 +2,60 @@
  {
   "tipo": "promo",
   "data": "2026-11-07",
+  "palavra": "aspirador portátil",
+  "metrica": "curtidas",
+  "produto": {
+   "nome": "Aspirador de Pó Vertical 2 em 1 Portátil Elgin 1500W Preto",
+   "nome_curto": "Aspirador portátil",
+   "preco": 130.49,
+   "preco_cheio": 279.99,
+   "desconto": 0.5339476409871782,
+   "imagem": "https://cf.shopee.com.br/file/br-11134207-820me-mptg49fmthj5b9",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F342086228%2F55612003632",
+   "nota": 4.91,
+   "pop": 3927,
+   "beneficios": []
+  }
+ },
+ {
+  "tipo": "promo",
+  "data": "2026-11-07",
+  "palavra": "air fryer",
+  "metrica": "curtidas",
+  "produto": {
+   "nome": "Air Fryer Rosa Britânia 5,5L Cesto Pinkstone 1500W BAFE53",
+   "nome_curto": "Air fryer",
+   "preco": 261.9,
+   "preco_cheio": 399.9,
+   "desconto": 0.34508627156789196,
+   "imagem": "https://cf.shopee.com.br/file/sg-11134201-8258r-munydl9glxc281",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F811879342%2F22794193064",
+   "nota": 4.97,
+   "pop": 82153,
+   "beneficios": []
+  }
+ },
+ {
+  "tipo": "promo",
+  "data": "2026-11-07",
+  "palavra": "fone bluetooth",
+  "metrica": "curtidas",
+  "produto": {
+   "nome": "Basike Fone De Ouvido Bluetooth Sem Fio, bluetooth earphone original, fone de ouvido…",
+   "nome_curto": "Fone bluetooth",
+   "preco": 183.58,
+   "preco_cheio": 289.0,
+   "desconto": 0.3647750865051903,
+   "imagem": "https://cf.shopee.com.br/file/br-11134207-7r98o-m8bt3q5krwnl03",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F1371911195%2F23298130852",
+   "nota": 4.88,
+   "pop": 3923,
+   "beneficios": []
+  }
+ },
+ {
+  "tipo": "promo",
+  "data": "2026-11-07",
   "palavra": "fone bluetooth",
   "metrica": "curtidas",
   "produto": {
