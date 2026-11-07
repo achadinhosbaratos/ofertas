@@ -9,6 +9,7 @@ permissions:
   contents: write   # salvar histórico e ofertas
   pages: write      # publicar a página de ofertas
   id-token: write
+  models: read      # IA gratuita do GitHub (escreve a chamada e as funções do produto)
 
 jobs:
   rodar:
@@ -28,7 +29,13 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
-          pip install -q requests pillow edge-tts gTTS
+          sudo apt-get install -y -qq fonts-inter || true
+          if ! fc-list | grep -qi "Inter Display"; then
+            curl -sL -o /tmp/inter.zip https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip
+            unzip -q -o /tmp/inter.zip -d /tmp/inter
+            mkdir -p ~/.fonts && cp /tmp/inter/extras/otf/InterDisplay-*.otf ~/.fonts/ && fc-cache -f > /dev/null
+          fi
+          pip install -q requests pillow numpy edge-tts gTTS
 
       - name: Rodar o robô
         env:
@@ -38,6 +45,7 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_CANAL: ${{ secrets.TELEGRAM_CANAL }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: python bot.py
 
       - name: Guardar histórico e ofertas
