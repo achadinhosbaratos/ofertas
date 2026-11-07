@@ -1,5 +1,59 @@
 [
  {
+  "tipo": "promo",
+  "data": "2026-11-07",
+  "palavra": "fone bluetooth",
+  "metrica": "curtidas",
+  "produto": {
+   "nome": "Fone de Ouvido Bluetooth 5.3 Sem Fio TWS Touch Intra-Auricular com Estojo Branco Sonorus…",
+   "nome_curto": "Fone bluetooth",
+   "preco": 159.9,
+   "preco_cheio": 249.9,
+   "desconto": 0.36014405762304924,
+   "imagem": "https://cf.shopee.com.br/file/br-11134207-81z1k-mgzbz9oy9r7kaa",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F1013839557%2F22994682871",
+   "nota": 4.96,
+   "pop": 22183,
+   "beneficios": []
+  }
+ },
+ {
+  "tipo": "promo",
+  "data": "2026-11-07",
+  "palavra": "suporte celular",
+  "metrica": "curtidas",
+  "produto": {
+   "nome": "Suporte Para Celular Para Moto Com Anti-furto Facil Instalação Alta Qualidade Universal",
+   "nome_curto": "Suporte celular",
+   "preco": 33.5,
+   "preco_cheio": 52.0,
+   "desconto": 0.3557692307692307,
+   "imagem": "https://cf.shopee.com.br/file/sg-11134201-820la-mnbbko2iw5xha0",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F412416348%2F23399299577",
+   "nota": 4.73,
+   "pop": 37,
+   "beneficios": []
+  }
+ },
+ {
+  "tipo": "promo",
+  "data": "2026-11-07",
+  "palavra": "mini processador",
+  "metrica": "curtidas",
+  "produto": {
+   "nome": "Mini Processador De Alimentos 160w 360ml Com Função Pulsar 2P Britânia",
+   "nome_curto": "Mini processador",
+   "preco": 139.99,
+   "preco_cheio": 189.99,
+   "desconto": 0.26317174588136216,
+   "imagem": "https://cf.shopee.com.br/file/br-11134207-820la-mlc27toje879d3",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F1042011939%2F56556656269",
+   "nota": 4.94,
+   "pop": 309,
+   "beneficios": []
+  }
+ },
+ {
   "data": "2026-11-07",
   "palavra": "fone bluetooth",
   "metrica": "curtidas",
