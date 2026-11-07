@@ -1,0 +1,63 @@
+name: Robô de achadinhos
+
+on:
+  schedule:
+    - cron: "17 11 * * *"   # todo dia às 08:17 (horário de Brasília)
+  workflow_dispatch:         # botão "Run workflow" pra rodar na hora
+
+permissions:
+  contents: write   # salvar histórico e ofertas
+  pages: write      # publicar a página de ofertas
+  id-token: write
+
+jobs:
+  rodar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.publicar.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependências
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+          pip install -q requests pillow edge-tts gTTS
+
+      - name: Rodar o robô
+        env:
+          SHOPEE_FEED_URL: ${{ secrets.SHOPEE_FEED_URL }}
+          SHOPEE_APP_ID: ${{ secrets.SHOPEE_APP_ID }}
+          SHOPEE_SECRET: ${{ secrets.SHOPEE_SECRET }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_CANAL: ${{ secrets.TELEGRAM_CANAL }}
+        run: python bot.py
+
+      - name: Guardar histórico e ofertas
+        if: always()
+        run: |
+          git config user.name "robo-achadinhos"
+          git config user.email "robo@users.noreply.github.com"
+          git add historico.json ofertas.json || true
+          git commit -m "robô $(date +%F)" || echo "nada novo"
+          git push || echo "não deu pra salvar"
+
+      - name: Preparar a página
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Publicar a página
+        id: publicar
+        if: always()
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
