@@ -74,7 +74,7 @@ DIAS_SEM_REPETIR = 30     # não repete o mesmo produto por esse tempo
 FORMATO = "telaverde"
 DESCONTO_MINIMO = 0.20    # promo: só produtos com pelo menos 20% de desconto na Shopee
 DESCONTO_MAXIMO = 0.75    # promo: desconto acima disso costuma ser preço "cheio" inflado
-USAR_IA = True            # promo: IA gratuita do GitHub escreve a chamada e lista as funções do produto
+USAR_IA = True            # IA gratuita do Google (Gemini) escreve o roteiro; precisa do segredo GEMINI_API_KEY
 
 # Texto do final do vídeo (onde está o link pra pessoa)
 CHAMADA_FINAL = "Link no perfil"
@@ -451,10 +451,14 @@ def texto_whatsapp(famoso, barato, palavra, link_famoso, link_barato):
 
 
 # ------------------------------------------------------------
-# Formato "promo": roteiro com IA (GitHub Models, grátis com o token do próprio GitHub)
+# Roteiro com IA: Gemini, do Google (plano gratuito; a chave fica no segredo GEMINI_API_KEY).
+# O robô escolhe sozinho um modelo "flash" disponível, porque o Google troca os nomes
+# dos modelos de tempos em tempos.
 # ------------------------------------------------------------
-IA_URL = "https://models.github.ai/inference/chat/completions"
-IA_MODELOS = ["openai/gpt-4.1-mini", "openai/gpt-4o-mini", "openai/gpt-4.1", "openai/gpt-4o"]
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta"
+GEMINI_RESERVA = ["gemini-flash-latest", "gemini-flash-lite-latest", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
+IA_INFO = {"modelo": "", "erro": ""}    # o painel mostra se a IA funcionou e, se não, por quê
+_MODELOS_GEMINI = []
 PROIBIDO = ["pouco tempo", "ultimas unidades", "so hoje", "acaba hoje", "estoque limitado",
             "relampago", "corre que acaba", "nao vai durar", "por tempo limitado"]
 
@@ -472,31 +476,80 @@ EXPERIENCIA = re.compile(r"\b(eu (uso|usei|comprei|testei|paguei|tenho)|comprei|
                          r"minha casa|aqui em casa|a minha|o meu|na minha|no meu)\b")
 
 
+def _motivo(r):
+    try:
+        return str(r.json().get("error", {}).get("message", "")).strip()[:180] or r.text[:180]
+    except Exception:
+        return r.text[:180]
+
+
+def _modelos_gemini(chave):
+    """Modelos 'flash' que a chave pode usar: primeiro os estáveis e mais novos, depois os 'lite' e prévias."""
+    if _MODELOS_GEMINI:
+        return _MODELOS_GEMINI
+    nomes = []
+    try:
+        r = requests.get(f"{GEMINI_URL}/models", params={"pageSize": 1000},
+                         headers={"x-goog-api-key": chave}, timeout=30)
+        if r.ok:
+            nomes = [m.get("name", "").split("/", 1)[-1] for m in r.json().get("models", [])
+                     if "generateContent" in m.get("supportedGenerationMethods", [])]
+        else:
+            IA_INFO["erro"] = f"o Google recusou a chave ({r.status_code}): {_motivo(r)}"
+    except Exception as e:
+        IA_INFO["erro"] = f"não consegui falar com o Google ({e})"
+    ruins = ("image", "tts", "audio", "live", "embed", "thinking", "exp", "native", "computer", "robotics")
+
+    def ordem(n):
+        v = re.match(r"gemini-(\d+(?:\.\d+)?)", n)
+        return ("preview" in n, "lite" in n, -(float(v.group(1)) if v else 0.0), n)
+    bons = sorted({n for n in nomes if n.startswith("gemini") and "flash" in n
+                   and not any(x in n for x in ruins)}, key=ordem)
+    _MODELOS_GEMINI[:] = (bons + [m for m in GEMINI_RESERVA if m not in bons])[:6]
+    return _MODELOS_GEMINI
+
+
 def chamar_ia(mensagens):
-    token = os.environ.get("GITHUB_TOKEN", "").strip()
-    if MODO_TESTE or not (USAR_IA and token):
+    """Manda o pedido pro Gemini e devolve o texto da resposta ("" se não deu; o motivo fica em IA_INFO)."""
+    chave = os.environ.get("GEMINI_API_KEY", "").strip()
+    if MODO_TESTE or not USAR_IA:
+        IA_INFO["erro"] = "modo teste (a IA não é chamada)" if MODO_TESTE else "a IA está desligada (USAR_IA = False)"
         return ""
-    for modelo in IA_MODELOS:
-        try:
-            r = requests.post(IA_URL, timeout=60,
-                              headers={"Authorization": f"Bearer {token}",
-                                       "Accept": "application/json",
-                                       "Content-Type": "application/json"},
-                              json={"model": modelo, "messages": mensagens,
-                                    "temperature": 0.7, "max_tokens": 800})
-        except Exception as e:
-            print(f"  (IA {modelo}: {e})")
-            continue
-        if r.status_code == 429:
-            print("  (IA: limite de uso atingido por hoje)")
-            return ""
-        if not r.ok:
-            print(f"  (IA {modelo}: {r.status_code} {r.text[:150]})")
-            continue
-        try:
-            return r.json()["choices"][0]["message"]["content"]
-        except Exception:
-            continue
+    if not chave:
+        IA_INFO["erro"] = "falta o segredo GEMINI_API_KEY no GitHub (ou a linha dele no robo.yml)"
+        return ""
+    sistema = "\n".join(m["content"] for m in mensagens if m["role"] == "system")
+    corpo = {"contents": [{"role": "model" if m["role"] == "assistant" else "user",
+                           "parts": [{"text": m["content"]}]} for m in mensagens if m["role"] != "system"],
+             "generationConfig": {"temperature": 0.7, "maxOutputTokens": 8192,
+                                  "responseMimeType": "application/json"}}
+    if sistema:
+        corpo["systemInstruction"] = {"parts": [{"text": sistema}]}
+    for modelo in _modelos_gemini(chave):
+        for _ in range(2):
+            try:
+                r = requests.post(f"{GEMINI_URL}/models/{modelo}:generateContent", json=corpo, timeout=90,
+                                  headers={"x-goog-api-key": chave, "Content-Type": "application/json"})
+            except Exception as e:
+                IA_INFO["erro"] = f"{modelo}: {e}"
+                break
+            if r.status_code == 400 and "responseMimeType" in corpo["generationConfig"]:
+                corpo["generationConfig"].pop("responseMimeType")   # tenta de novo sem o "só JSON"
+                continue
+            if not r.ok:
+                IA_INFO["erro"] = f"{modelo} respondeu {r.status_code}: {_motivo(r)}"
+                print(f"  (IA {IA_INFO['erro']})")
+                break
+            try:
+                partes = r.json()["candidates"][0]["content"]["parts"]
+                texto = "".join(p.get("text", "") for p in partes if not p.get("thought"))
+            except Exception:
+                texto = ""
+            if texto.strip():
+                IA_INFO["modelo"] = modelo
+                return texto
+            IA_INFO["erro"] = f"{modelo} devolveu uma resposta vazia"
+            break
     return ""
 
 
@@ -554,8 +607,9 @@ def validar_ia(d):
                                                          "como_funciona", "fala_usos", "volta_gancho",
                                                          "resumo")]
                                + out.get("beneficios", []) + out.get("usos", [])).lower())
-    if any(x in tudo for x in PROIBIDO):
+    if any(re.search(rf"\b{re.escape(x)}\b", tudo) for x in PROIBIDO):
         print("  (IA escreveu promessa que não dá pra garantir; usando texto padrão)")
+        IA_INFO["erro"] = "a IA escreveu uma promessa que não dá pra garantir (ex.: 'só hoje'), então usei o texto padrão"
         return {}
     return out
 
@@ -588,10 +642,13 @@ def roteiro_ia(p):
                        {"role": "user", "content": pedido}])
     m = re.search(r"\{.*\}", texto or "", re.S)
     if not m:
+        if texto:
+            IA_INFO["erro"] = "a resposta da IA veio num formato que o robô não entendeu"
         return {}
     try:
         return validar_ia(json.loads(m.group(0)))
     except Exception:
+        IA_INFO["erro"] = "a resposta da IA veio num formato que o robô não entendeu"
         return {}
 
 
@@ -1622,7 +1679,7 @@ def fazer_conversa(produtos, palavra, hist, pasta_dia, rnd, usar_feed, sub):
               f"De {reais(p['preco_cheio'])} por {reais(p['preco'])} (-{pct}%)\n"
               + aviso_link(link, usar_feed) + f"\n{dialogo}")
     return {"titulo": nome, "video": video, "resumo": resumo,
-            "legenda": legenda_promo(p, ia, palavra),
+            "legenda": legenda_promo(p, ia, palavra), "ia": bool(ia),
             "canal": canal_promo(p, ia, palavra, link),
             "whatsapp": whatsapp_promo(p, ia, palavra, link),
             "foto_canal": p["imagem"], "ids": [p["id"]],
@@ -1770,6 +1827,18 @@ def _cenario(recorte, cores):
         img.alpha_composite(sombra.filter(ImageFilter.GaussianBlur(22)))
     img.alpha_composite(rec, (0, y0))
     return img.convert("RGB"), y0 + rec.height // 2
+
+
+def _foto_limpa(foto):
+    """Nota de 'limpeza' da foto: foto de estúdio que dá pra recortar ganha; montagem cheia de texto perde."""
+    g = foto.convert("L")
+    g.thumbnail((256, 256))
+    bordas = g.filter(ImageFilter.FIND_EDGES)
+    poluicao = sum(i * n for i, n in enumerate(bordas.histogram())) / (255 * bordas.width * bordas.height)
+    nota = -10 * poluicao
+    if _fundo_branco(foto):
+        nota += 1 + (1 if _recortar(foto) is not None else 0)
+    return nota
 
 
 def _cenarios(foto, rnd):
@@ -2056,9 +2125,11 @@ def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd):
             planos.append({"ini": s["ini"] + (s["fim"] - s["ini"]) * k / n,
                            "fim": s["ini"] + (s["fim"] - s["ini"]) * (k + 1) / n, "secao": s["secao"]})
     outros = list(range(1, len(canvases))) or [0]
+    # capa (1º plano): o produto recortado num fundo colorido, se deu; senão a foto principal
+    capa = next((i for i, c in enumerate(canvases) if len(c1) > 1 and c is c1[1]), 0)
     for i, pl in enumerate(planos):
         if i == 0:
-            pl["foto"], pl["mov"] = (1 if len(canvases) > 1 else 0), "abre"
+            pl["foto"], pl["mov"] = capa, "abre"
         elif i == len(planos) - 1:
             pl["foto"], pl["mov"] = 0, "fecha"
         elif pl["secao"] in ("preco", "cta"):        # fundo da foto original: o amarelo aparece bem
@@ -2227,6 +2298,8 @@ def fazer_tela_verde(produtos, palavra, hist, pasta_dia, rnd, usar_feed, sub):
             f2 = baixar_foto(p["imagem2"], pasta / "foto2.jpg")
         except Exception:
             f2 = f1
+    if f2 is not f1 and _foto_limpa(f2) > _foto_limpa(f1) + 0.15:
+        f1, f2 = f2, f1          # a foto mais limpa vira a principal (preço, chamada e capa)
     falas = roteiro_tela_verde(p, ia, palavra, rnd)
     video = pasta_dia / f"{slug}.mp4"
     montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, video, rnd)
@@ -2235,7 +2308,7 @@ def fazer_tela_verde(produtos, palavra, hist, pasta_dia, rnd, usar_feed, sub):
               f"De {reais(p['preco_cheio'])} por {reais(p['preco'])} (-{pct}%)\n"
               + aviso_link(link, usar_feed) + f"\n{dialogo}")
     return {"titulo": nome, "video": video, "resumo": resumo,
-            "legenda": legenda_promo(p, ia, palavra),
+            "legenda": legenda_promo(p, ia, palavra), "ia": bool(ia),
             "canal": canal_promo(p, ia, palavra, link),
             "whatsapp": whatsapp_promo(p, ia, palavra, link),
             "foto_canal": p["imagem"], "ids": [p["id"]],
@@ -2489,9 +2562,17 @@ def gerar_painel(entregas, texto_whatsapp_dia):
     e = html.escape
     hoje = dt.date.today().strftime("%d/%m")
     blocos = []
+    sem_ia = [x for x in entregas if x.get("ia") is False]
+    if sem_ia:
+        blocos.append(f'<section class="card aviso"><b>⚠️ A IA não escreveu o roteiro de {len(sem_ia)} '
+                      f'vídeo(s) hoje</b>, então eles saíram com o texto padrão.<br>'
+                      f'Motivo: {e(IA_INFO.get("erro") or "não identificado")}</section>')
+    elif any(x.get("ia") for x in entregas):
+        blocos.append(f'<p class="ok">✅ Roteiros escritos pela IA ({e(IA_INFO.get("modelo") or "Gemini")}).</p>')
     for i, x in enumerate(entregas):
+        selo_ia = {True: " <small>roteiro da IA</small>", False: " <small>texto padrão</small>"}.get(x.get("ia"), "")
         blocos.append(
-            f'<section class="card"><h2>{e(x["palavra"].capitalize())}</h2>'
+            f'<section class="card"><h2>{e(x["palavra"].capitalize())}{selo_ia}</h2>'
             f'<video src="videos/{e(x["arquivo"], quote=True)}" controls playsinline preload="metadata"></video>'
             f'<a class="btn" href="videos/{e(x["arquivo"], quote=True)}" download>Baixar vídeo</a>'
             f'<h3>Legenda (TikTok, Reels, Shopee Vídeo)</h3><textarea id="l{i}" readonly>{e(x["legenda"])}</textarea>'
@@ -2515,6 +2596,9 @@ video{{width:100%;max-height:70vh;border-radius:12px;background:#000;display:blo
 textarea{{width:100%;min-height:120px;border-radius:10px;border:1px solid var(--borda);background:var(--bg);color:var(--txt);padding:10px;font-size:14px;line-height:1.4;font-family:inherit}}
 textarea.alto{{min-height:220px}}
 .card .btn{{margin:8px 8px 0 0;border:0;font-family:inherit;cursor:pointer}}.btn.sec{{background:var(--chip);color:var(--txt)}}
+.card h2 small{{font-size:13px;font-weight:600;color:var(--sub);margin-left:6px}}
+.aviso{{background:#fff4d6;color:#4a3b00;border:1px solid #f0d27a;line-height:1.5}}
+.ok{{margin:0 0 12px;font-size:14px;color:var(--sub)}}
 </style></head>
 <body><header><h1>Painel do robô</h1><p>Vídeos e textos de {hoje}. Esta página não aparece pro público.</p></header>
 <main>{corpo}</main>
@@ -2658,7 +2742,7 @@ def fazer_promo(produtos, palavra, hist, pasta_dia, rnd, usar_feed, sub):
               + aviso_link(link, usar_feed)
               + f"\nNarração: {' '.join(falas)}")
     return {"titulo": nome, "video": video, "resumo": resumo,
-            "legenda": legenda_promo(p, ia, palavra),
+            "legenda": legenda_promo(p, ia, palavra), "ia": bool(ia),
             "canal": canal_promo(p, ia, palavra, link),
             "whatsapp": whatsapp_promo(p, ia, palavra, link),
             "foto_canal": p["imagem"], "ids": [p["id"]],
@@ -2776,7 +2860,8 @@ def main():
                 continue
             entregar_telegram(r)
             blocos_whatsapp.append(r["whatsapp"])
-            entregas.append({"palavra": r["titulo"], "video": r["video"], "legenda": r["legenda"]})
+            entregas.append({"palavra": r["titulo"], "video": r["video"], "legenda": r["legenda"],
+                             "ia": r.get("ia")})
             for i in r["ids"]:
                 hist[i] = hoje.isoformat()
             ofertas.insert(0, r["registro"])
