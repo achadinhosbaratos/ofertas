@@ -21,6 +21,7 @@ import hashlib
 import html
 import io
 import json
+import math
 import urllib.parse
 import os
 import random
@@ -65,10 +66,12 @@ SO_ENVIO_NACIONAL = True  # só produtos enviados do Brasil (entrega mais rápid
 DIAS_SEM_REPETIR = 30     # não repete o mesmo produto por esse tempo
 
 # Formato do vídeo:
+#   "telaverde"   -> produto em tela cheia trocando de enquadramento e o Lupi no canto apresentando
+#                    (a amiga abre com uma pergunta), no estilo "tela verde" dos afiliados do TikTok
 #   "conversa"    -> o Lupi (mascote) conversa com uma amiga sobre um produto em promoção
 #   "promo"       -> um produto em promoção: "de R$ X por R$ Y", funções do produto, nota e curtidas
 #   "comparativo" -> produto famoso x opção parecida mais barata
-FORMATO = "conversa"
+FORMATO = "telaverde"
 DESCONTO_MINIMO = 0.20    # promo: só produtos com pelo menos 20% de desconto na Shopee
 DESCONTO_MAXIMO = 0.75    # promo: desconto acima disso costuma ser preço "cheio" inflado
 USAR_IA = True            # promo: IA gratuita do GitHub escreve a chamada e lista as funções do produto
@@ -87,6 +90,7 @@ CANAL_WHATSAPP = "https://whatsapp.com/channel/0029VbEeN7aElagzyls0tb0N"
 NOME_PAINEL = "painel.html"   # sua página com os vídeos do dia (não aparece na página pública)
 VOZ = "pt-BR-FranciscaNeural"   # voz feminina; "pt-BR-AntonioNeural" é a masculina
 VELOCIDADE = "+8%"               # ritmo da narração ("+0%" normal, "+15%" mais rápido)
+RITMO_TELA_VERDE = "+15%"        # tela verde: fala mais rápida, como nos vídeos de afiliado que vendem
 
 # ============================================================
 # (daqui pra baixo não precisa mexer)
@@ -459,8 +463,13 @@ IA_SISTEMA = (
     "em português do Brasil, com tom animado e natural. Regras: use SOMENTE informações que "
     "estão no título e na descrição; não invente medidas, materiais, garantias, resultados nem "
     "depoimentos; não fale de prazo da promoção, de estoque nem de 'pouco tempo'; não mencione "
-    "preço (ele entra depois); não use emojis nem hashtags. Responda apenas com um objeto JSON."
+    "preço (ele entra depois); nunca fale como se alguém tivesse usado, comprado ou testado o produto "
+    "(nada de 'eu uso', 'comprei', 'paguei', 'na minha casa'); não use emojis nem hashtags. "
+    "Responda apenas com um objeto JSON."
 )
+# frases de quem diz que usou/comprou: o Lupi não pode dizer isso (seria depoimento falso)
+EXPERIENCIA = re.compile(r"\b(eu (uso|usei|comprei|testei|paguei|tenho)|comprei|paguei|testei|"
+                         r"minha casa|aqui em casa|a minha|o meu|na minha|no meu)\b")
 
 
 def chamar_ia(mensagens):
@@ -474,7 +483,7 @@ def chamar_ia(mensagens):
                                        "Accept": "application/json",
                                        "Content-Type": "application/json"},
                               json={"model": modelo, "messages": mensagens,
-                                    "temperature": 0.7, "max_tokens": 500})
+                                    "temperature": 0.7, "max_tokens": 800})
         except Exception as e:
             print(f"  (IA {modelo}: {e})")
             continue
@@ -518,9 +527,33 @@ def validar_ia(d):
     fala = limpar_texto(d.get("fala_beneficios"), 240)
     if len(fala) >= 15:
         out["fala_beneficios"] = fala if fala.endswith((".", "!", "?")) else fala + "."
-    tudo = sem_acento(" ".join([out.get("gancho", ""), out.get("fala_beneficios", ""),
-                                out.get("pergunta_amiga", "")]
-                               + out.get("beneficios", [])).lower())
+    # tela verde: o que é e como funciona, usos concretos, volta no gancho e resumo
+    como = limpar_texto(d.get("como_funciona"), 170)
+    if len(como) >= 12 and "r$" not in como.lower() and "reais" not in como.lower():
+        out["como_funciona"] = como if como.endswith((".", "!", "?")) else como + "."
+    usos = d.get("usos") if isinstance(d.get("usos"), list) else []
+    usos = [limpar_texto(u, 24) for u in usos if isinstance(u, str)]
+    usos = [u for u in usos if len(u) >= 2][:4]
+    fala_usos = limpar_texto(d.get("fala_usos"), 170)
+    if len(usos) >= 2 and len(fala_usos) >= 10 and "r$" not in fala_usos.lower():
+        out["usos"] = usos
+        out["fala_usos"] = fala_usos if fala_usos.endswith((".", "!", "?")) else fala_usos + "."
+    volta = limpar_texto(d.get("volta_gancho"), 50)
+    if len(volta) >= 4 and len(volta.split()) <= 8:
+        out["volta_gancho"] = volta if volta.endswith((".", "!", "?")) else volta + "!"
+    resumo = limpar_texto(d.get("resumo"), 90)
+    if len(resumo) >= 10 and "r$" not in resumo.lower():
+        out["resumo"] = resumo if resumo.endswith((".", "!", "?")) else resumo + "."
+    for chave in ("gancho", "fala_beneficios", "como_funciona", "fala_usos", "volta_gancho", "resumo"):
+        if chave in out and EXPERIENCIA.search(sem_acento(out[chave]).lower()):
+            print(f"  (IA falou como se tivesse usado o produto em '{chave}'; tirei essa frase)")
+            out.pop(chave)
+            if chave == "fala_usos":
+                out.pop("usos", None)
+    tudo = sem_acento(" ".join([out.get(c, "") for c in ("gancho", "fala_beneficios", "pergunta_amiga",
+                                                         "como_funciona", "fala_usos", "volta_gancho",
+                                                         "resumo")]
+                               + out.get("beneficios", []) + out.get("usos", [])).lower())
     if any(x in tudo for x in PROIBIDO):
         print("  (IA escreveu promessa que não dá pra garantir; usando texto padrão)")
         return {}
@@ -540,7 +573,16 @@ def roteiro_ia(p):
         'de preferência uma pergunta sobre o problema que o produto resolve ou uma curiosidade;\n'
         '"beneficios": lista com 3 funções ou vantagens reais do produto, cada uma com até 5 palavras;\n'
         '"fala_beneficios": 1 ou 2 frases curtas para narração, em tom de conversa, começando pelo '
-        'problema que ele resolve, até 25 palavras.'
+        'problema que ele resolve, até 25 palavras;\n'
+        '"como_funciona": resposta do Lupi à pergunta da amiga: responde direto, apresenta o produto '
+        '("Esse é o..."/"Essa é a...") e diz de um jeito simples como ele funciona, até 22 palavras;\n'
+        '"usos": lista com 3 ou 4 situações ou coisas concretas do dia a dia em que o produto serve, '
+        'cada uma com 1 a 3 palavras (ex.: "cebola", "alho", "molho"), só o que o título e a descrição confirmam;\n'
+        '"fala_usos": 1 frase falada que cita esses usos na mesma ordem, até 18 palavras '
+        '(ex.: "Serve pra cebola, alho, salsinha e até pra fazer molho.");\n'
+        '"volta_gancho": frase bem curta que fecha o assunto da pergunta da amiga, até 6 palavras '
+        '(ex.: "Sem faca e sem chorar!");\n'
+        '"resumo": uma frase-resumo no formato "Um/Uma ... só pra ...", até 12 palavras.'
     )
     texto = chamar_ia([{"role": "system", "content": IA_SISTEMA},
                        {"role": "user", "content": pedido}])
@@ -803,11 +845,19 @@ def fundo_foto(foto):
     return b.convert("RGBA")
 
 
-def _fundo_branco(foto):
+def _borda(foto):
+    """Pontos da borda da foto (pra saber a cor do fundo)."""
     f = foto.convert("RGB")
-    cantos = [f.getpixel((2, 2)), f.getpixel((f.width - 3, 2)),
-              f.getpixel((2, f.height - 3)), f.getpixel((f.width - 3, f.height - 3))]
-    return all(min(c) > 225 for c in cantos)
+    w, h = f.size
+    pts = ([(int((w - 1) * i / 40), y) for i in range(41) for y in (1, h - 2)]
+           + [(x, int((h - 1) * i / 40)) for i in range(41) for x in (1, w - 2)])
+    return [f.getpixel(p) for p in pts]
+
+
+def _fundo_branco(foto):
+    """Foto de estúdio: quase toda a borda é branca (aceita uma marca ou sujeira num canto)."""
+    borda = _borda(foto)
+    return sum(1 for c in borda if min(c) > 225) >= 0.85 * len(borda)
 
 
 def cartao(img, foto, caixa, raio=46):
@@ -993,16 +1043,17 @@ def _tempos_estimados(texto, total):
     return out
 
 
-def narrar_tempos(texto, destino, voz=None, tom="+0Hz"):
+def narrar_tempos(texto, destino, voz=None, tom="+0Hz", ritmo=None):
     """Devolve (ok, [(início, fim, palavra), ...]). Tenta a voz escolhida, depois as reservas e o gTTS."""
     import asyncio
+    ritmo = ritmo or VELOCIDADE
 
     async def edge(voz):
         import edge_tts
         try:
-            com = edge_tts.Communicate(texto, voz, rate=VELOCIDADE, pitch=tom, boundary="WordBoundary")
+            com = edge_tts.Communicate(texto, voz, rate=ritmo, pitch=tom, boundary="WordBoundary")
         except TypeError:
-            com = edge_tts.Communicate(texto, voz, rate=VELOCIDADE, pitch=tom)
+            com = edge_tts.Communicate(texto, voz, rate=ritmo, pitch=tom)
         audio, palavras = bytearray(), []
         async for ch in com.stream():
             if ch["type"] == "audio":
@@ -1578,6 +1629,619 @@ def fazer_conversa(produtos, palavra, hist, pasta_dia, rnd, usar_feed, sub):
             "registro": oferta_registro_promo(p, ia, palavra, link)}
 
 
+# ------------------------------------------------------------
+# Formato "tela verde": o produto em tela cheia, trocando de enquadramento a cada 2–3 s,
+# e o Lupi no canto apresentando (como os afiliados que gravam com o efeito Tela Verde).
+# A amiga abre com a pergunta; o resto o Lupi fala sozinho, mais rápido.
+# Roteiro: dor -> o que é e como funciona -> preço -> usos concretos -> volta no gancho
+#          -> nota -> resumo -> chamada.
+# Cada quadro é desenhado aqui no Python e vai direto pro ffmpeg.
+# ------------------------------------------------------------
+TV_TEXTO_Y = 300            # topo dos textos de cima (pergunta, nome, preço, usos, nota, chamada)
+TV_LUPI_ALTURA = 520        # o Lupi fica embaixo à esquerda (o lado direito tem os botões do app)
+TV_LUPI_PE = 1600           # onde ficam os pés do Lupi
+TV_LEGENDA = (690, 1425)    # centro da legenda, ao lado do Lupi
+TV_LEGENDA_LARG = 520
+TV_PLANO = 2.4              # duração média de cada enquadramento (segundos)
+TV_MOVIMENTOS = ["detalhe", "panorama", "sobe", "panorama2", "detalhe2"]
+# cenários coloridos (cor de cima, cor de baixo) pro produto recortado do fundo branco
+TV_CORES = [((244, 239, 255), (212, 200, 250)),     # lilás
+            ((233, 251, 246), (190, 236, 224)),     # menta
+            ((255, 244, 233), (255, 214, 190))]     # pêssego
+
+
+def roteiro_tela_verde(p, ia, palavra, rnd):
+    """Falas do vídeo: [{'secao', 'quem', 'fala'}]. O Lupi não diz que usou nem que comprou
+    (seria depoimento falso): fala só do que o anúncio mostra."""
+    nome = (ia.get("nome_curto") or palavra).strip()
+    nome = nome[0].upper() + nome[1:]
+    nota = f"{p['nota']:.1f}".replace(".", ",")
+    tem_ia = bool(ia.get("pergunta_amiga") and ia.get("como_funciona"))
+    pergunta = ia["pergunta_amiga"] if tem_ia else rnd.choice([
+        "Lupi, achou alguma coisa boa hoje?", "E aí, Lupi, qual é o achado de hoje?"])
+    apresenta = ia["como_funciona"] if tem_ia else rnd.choice([
+        f"Achei! Olha só: {nome}.", f"Achei sim! Olha isso: {nome}."])
+    falas = [
+        {"secao": "gancho", "quem": "amiga", "fala": pergunta},
+        {"secao": "produto", "quem": "lupi", "fala": apresenta},
+        {"secao": "preco", "quem": "lupi",
+         "fala": f"E tá de {reais_falado(p['preco_cheio'])} por {reais_falado(p['preco'])} na Shopee!"},
+    ]
+    if ia.get("usos") and ia.get("fala_usos"):
+        falas.append({"secao": "usos", "quem": "lupi", "fala": ia["fala_usos"]})
+    elif ia.get("beneficios") and ia.get("fala_beneficios"):
+        falas.append({"secao": "beneficios", "quem": "lupi", "fala": ia["fala_beneficios"]})
+    if tem_ia and ia.get("volta_gancho"):
+        falas.append({"secao": "volta", "quem": "lupi", "fala": ia["volta_gancho"]})
+    if p["nota"] >= 1:
+        envio = ", e é enviado do Brasil" if p.get("nacional", True) else ""
+        falas.append({"secao": "prova", "quem": "lupi",
+                      "fala": f"Nota {nota} na Shopee, com {vendas_texto(p['vendas'])} {METRICA}{envio}!"})
+    if ia.get("resumo"):
+        falas.append({"secao": "resumo", "quem": "lupi", "fala": ia["resumo"]})
+    falas.append({"secao": "cta", "quem": "lupi", "fala": rnd.choice([
+        "O link tá no meu perfil. Confere o preço de hoje, que ele pode mudar!",
+        "Toca no link do meu perfil e confere o preço de hoje, que ele pode mudar!"])})
+    return falas
+
+
+def _na_largura(img):
+    """A foto (ou o recorte) na largura toda da tela; foto em pé usa só o meio. Devolve (imagem, y do topo)."""
+    alt = int(img.height * W / img.width)
+    img = img.resize((W, alt), Image.LANCZOS)
+    if alt > 1320:
+        y = (alt - 1320) // 2
+        img = img.crop((0, y, W, y + 1320))
+        alt = 1320
+    return img, max(220, 820 - alt // 2)
+
+
+def _borda_suave(tam, margem):
+    """Máscara que some suavemente nas bordas (esconde emenda e sujeirinha na beira da foto)."""
+    m = Image.new("L", tam, 0)
+    ImageDraw.Draw(m).rectangle((margem, margem, tam[0] - 1 - margem, tam[1] - 1 - margem), fill=255)
+    return m.filter(ImageFilter.GaussianBlur(margem / 2))
+
+
+def _tela_cheia(foto):
+    """Fundo de um plano: a foto na largura toda. Foto de estúdio (fundo branco): a tela inteira fica
+    da cor do fundo dela, como se o produto estivesse solto na tela. Foto de uso: ela mesma desfocada atrás.
+    Devolve (imagem, altura do centro da foto)."""
+    f = foto.convert("RGB")
+    branco = _fundo_branco(f)
+    if branco:
+        claros = [c for c in _borda(f) if min(c) > 225]
+        img = Image.new("RGB", (W, H), tuple(sum(c[i] for c in claros) // len(claros) for i in range(3)))
+    else:
+        img = fundo_foto(foto).convert("RGB")
+    f, y0 = _na_largura(f)
+    img.paste(f, (0, y0), _borda_suave(f.size, 26) if branco else None)
+    return img, y0 + f.height // 2
+
+
+def _recortar(foto):
+    """Tira o fundo branco de uma foto de estúdio (só o branco que encosta na borda, então o branco
+    de dentro do produto fica). Devolve a foto RGBA, ou None quando o recorte não é confiável."""
+    from PIL import ImageChops
+    f = foto.convert("RGB")
+    peq = f.copy()
+    peq.thumbnail((540, 540))
+    r, g, b = peq.split()
+    menor = ImageChops.darker(ImageChops.darker(r, g), b)
+    maior = ImageChops.lighter(ImageChops.lighter(r, g), b)
+    claro = menor.point(lambda v: 255 if v >= 226 else 0)
+    cinza = ImageChops.subtract(maior, menor).point(lambda v: 255 if v <= 24 else 0)
+    m = ImageChops.multiply(claro, cinza)
+    w, h = m.size
+    for i in range(0, w, 6):
+        for xy in ((i, 0), (i, h - 1)):
+            if m.getpixel(xy) == 255:
+                ImageDraw.floodfill(m, xy, 128)
+    for j in range(0, h, 6):
+        for xy in ((0, j), (w - 1, j)):
+            if m.getpixel(xy) == 255:
+                ImageDraw.floodfill(m, xy, 128)
+    fundo = m.point(lambda v: 255 if v == 128 else 0)
+    parte = sum(fundo.histogram()[255:]) / (w * h)
+    if not 0.18 <= parte <= 0.88:
+        return None
+    alfa = ImageChops.invert(fundo).filter(ImageFilter.MinFilter(3)).filter(ImageFilter.GaussianBlur(1.2))
+    alfa = ImageChops.multiply(alfa, _borda_suave(alfa.size, max(4, w // 40)))
+    rec = f.convert("RGBA")
+    rec.putalpha(alfa.resize(f.size, Image.BILINEAR))
+    return rec
+
+
+def _cenario(recorte, cores):
+    """Produto recortado num fundo colorido (degradê suave) com sombrinha embaixo."""
+    topo_c, base_c = cores
+    faixa = Image.new("RGB", (1, H))
+    for y in range(H):
+        u = y / (H - 1)
+        faixa.putpixel((0, y), tuple(int(topo_c[i] + (base_c[i] - topo_c[i]) * u) for i in range(3)))
+    img = faixa.resize((W, H)).convert("RGBA")
+    rec, y0 = _na_largura(recorte)
+    caixa = rec.getchannel("A").getbbox()
+    if caixa:
+        x0, _, x1, y1 = caixa
+        sombra = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        ImageDraw.Draw(sombra).ellipse((x0 + (x1 - x0) * 0.1, y0 + y1 - 24, x1 - (x1 - x0) * 0.1, y0 + y1 + 30),
+                                       fill=(40, 20, 60, 70))
+        img.alpha_composite(sombra.filter(ImageFilter.GaussianBlur(22)))
+    img.alpha_composite(rec, (0, y0))
+    return img.convert("RGB"), y0 + rec.height // 2
+
+
+def _cenarios(foto, rnd):
+    """Os 'cenários' de uma foto: ela mesma e, se for de estúdio e o recorte der certo, 2 fundos coloridos."""
+    lista = [_tela_cheia(foto)]
+    if _fundo_branco(foto):
+        rec = _recortar(foto)
+        if rec is not None:
+            lista += [_cenario(rec, cores) for cores in rnd.sample(TV_CORES, 2)]
+    return lista
+
+
+def _camera(tipo, u, cy):
+    """(zoom, centro x, centro y) do enquadramento no instante u (0 a 1) do plano; cy = centro da foto."""
+    if tipo == "abre":                   # começa perto do produto e vai chegando mais
+        return 1.10 + 0.16 * u, 540, 960 + (cy - 960) * (0.5 + 0.5 * u)
+    if tipo == "detalhe":
+        return 1.30 + 0.12 * u, 540, cy
+    if tipo == "detalhe2":
+        return 1.48 - 0.14 * u, 540, cy + 30
+    if tipo == "panorama":
+        return 1.32, 455 + 170 * u, cy
+    if tipo == "panorama2":
+        return 1.32, 625 - 170 * u, cy
+    if tipo == "sobe":
+        return 1.26, 540, cy + 90 - 180 * u
+    return 1.24 - 0.20 * u, 540, cy + (960 - cy) * u     # "fecha": último plano, vai se afastando
+
+
+def _enquadrar(fundo, z, cx, cy):
+    z = max(1.0, z)
+    vw, vh = W / z, H / z
+    cx = min(max(cx, vw / 2), W - vw / 2)
+    cy = min(max(cy, vh / 2), H - vh / 2)
+    return fundo.transform((W, H), Image.AFFINE, (1 / z, 0, cx - vw / 2, 0, 1 / z, cy - vh / 2),
+                           resample=Image.BILINEAR)
+
+
+def _pop(img, f, n=5, de=0.7):
+    """Entrada com 'pulinho': cresce de 70% até 100% (passando um pouco) em n quadros."""
+    if f >= n:
+        return img
+    u = (max(0, f) + 1) / n
+    esc = de + (1 - de) * u + 0.08 * math.sin(math.pi * u)
+    return img.resize((max(1, int(img.width * esc)), max(1, int(img.height * esc))), Image.BILINEAR)
+
+
+def _colar(quadro, img, cx, cy, f=99):
+    """Cola a camada centrada em (cx, cy), com o pulinho de entrada nos primeiros quadros."""
+    im = _pop(img, f)
+    quadro.paste(im, (int(cx - im.width / 2), int(cy - im.height / 2)), im)
+
+
+def _cartao_pergunta(palavras, ativo):
+    """A pergunta da amiga em cima, com a palavra falada em laranja."""
+    fnt = forte(64)
+    d0 = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+    linhas, atual = [], []
+    for i, w in enumerate(palavras):
+        if atual and d0.textlength(" ".join(palavras[j] for j in atual + [i]), font=fnt) > 840:
+            linhas.append(atual)
+            atual = []
+        atual.append(i)
+    if atual:
+        linhas.append(atual)
+    linhas = linhas[:4]
+    alt = 56 + len(linhas) * 78
+    img = Image.new("RGBA", (W, alt + 70), (0, 0, 0, 0))
+    sombra = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    ImageDraw.Draw(sombra).rounded_rectangle((70, 40, W - 70, 40 + alt), 40, fill=(0, 0, 0, 120))
+    img.alpha_composite(sombra.filter(ImageFilter.GaussianBlur(10)))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle((70, 30, W - 70, 30 + alt), 40, fill=(255, 236, 244), outline=PRETO, width=6)
+    pilula(img, "AMIGA", 180, 30, media(30), (233, 64, 120), "white", px=18, py=8)
+    y = 30 + 30
+    for ln in linhas:
+        texto = " ".join(palavras[i] for i in ln)
+        x = W / 2 - d.textlength(texto, font=fnt) / 2
+        for i in ln:
+            d.text((x, y), palavras[i], font=fnt, fill=LARANJA if i == ativo else PRETO)
+            x += d.textlength(palavras[i] + " ", font=fnt)
+        y += 78
+    return img
+
+
+def _cartao_nome(nome):
+    img = Image.new("RGBA", (W, 250), (0, 0, 0, 0))
+    pilula(img, "ACHADO DO DIA", W / 2, 44, media(34), (233, 64, 120), "white", px=22, py=10)
+    d = ImageDraw.Draw(img)
+    tam = 72
+    while tam > 44 and d.textlength(nome, font=forte(tam)) > 860:
+        tam -= 4
+    pilula(img, caber(d, nome, forte(tam), 860), W / 2, 150, forte(tam), PRETO, "white", px=40, py=22, angulo=-2)
+    return img
+
+
+def _cartao_preco(p, pct):
+    img = Image.new("RGBA", (W, 400), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    t = f"de {reais(p['preco_cheio'])}"
+    fnt = media(50)
+    pilula(img, t, W / 2, 50, fnt, (0, 0, 0, 175), CINZA, px=28, py=12)
+    tw = d.textlength(t, font=fnt)
+    d.line((W / 2 - tw / 2 - 6, 54, W / 2 + tw / 2 + 6, 54), fill=VERMELHO, width=8)
+    pilula(img, f"por {reais(p['preco'])}", W / 2, 185, forte(108), AMARELO, PRETO, px=46, py=26, angulo=3)
+    if pct:
+        selo(img, f"-{pct}%", 912, 92, 74)
+    pilula(img, f"preço visto em {dt.date.today():%d/%m}", W / 2, 330, media(32), (0, 0, 0, 160),
+           (235, 230, 245), px=20, py=9)
+    return img
+
+
+def _cartao_cta():
+    img = Image.new("RGBA", (W, 300), (0, 0, 0, 0))
+    pilula(img, "LINK NO PERFIL  ↗", W / 2, 90, forte(92), AMARELO, PRETO, px=46, py=26, angulo=-2)
+    pilula(img, "confere o preço de hoje", W / 2, 228, media(46), PRETO, "white", px=30, py=14)
+    return img
+
+
+def _etiqueta(texto, estilo):
+    """Etiqueta arredondada: 'check' (branca com ✓), 'nota' (amarela com estrela), 'verde' ou 'branca'."""
+    fnt = media(52)
+    tw = ImageDraw.Draw(Image.new("RGB", (8, 8))).textlength(texto, font=fnt)
+    icone = 58 if estilo in ("check", "nota") else 0
+    w, h = int(tw + 60 + (icone + 10 if icone else 0)), 90
+    img = Image.new("RGBA", (w + 24, h + 32), (0, 0, 0, 0))
+    sombra = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    ImageDraw.Draw(sombra).rounded_rectangle((12, 18, 12 + w, 18 + h), h // 2, fill=(0, 0, 0, 120))
+    img.alpha_composite(sombra.filter(ImageFilter.GaussianBlur(8)))
+    d = ImageDraw.Draw(img)
+    fundo, cor = {"check": ("white", PRETO), "nota": (AMARELO, PRETO),
+                  "verde": (VERDE, "white"), "branca": ("white", PRETO)}[estilo]
+    d.rounded_rectangle((12, 10, 12 + w, 10 + h), h // 2, fill=fundo)
+    x = 12 + 26
+    if estilo == "check":
+        check(d, x - 4, 10 + (h - 58) // 2, 58)
+        x += icone + 10
+    elif estilo == "nota":
+        estrela(d, x + 25, 10 + h / 2, 30, PRETO)
+        x += icone + 10
+    d.text((x, 10 + h / 2), texto, font=fnt, fill=cor, anchor="lm")
+    return img
+
+
+def _fileiras(imgs, y0, larg=930, gap_x=10, gap_y=4):
+    """Centro (x, y) de cada etiqueta, em fileiras centralizadas a partir de y0."""
+    fileiras, atual, ocupado = [], [], 0
+    for i, im in enumerate(imgs):
+        if atual and ocupado + gap_x + im.width > larg:
+            fileiras.append(atual)
+            atual, ocupado = [], 0
+        ocupado += (gap_x if atual else 0) + im.width
+        atual.append(i)
+    if atual:
+        fileiras.append(atual)
+    pos, y = [None] * len(imgs), y0
+    for fl in fileiras:
+        x = (W - sum(imgs[i].width for i in fl) - gap_x * (len(fl) - 1)) / 2
+        alt = max(imgs[i].height for i in fl)
+        for i in fl:
+            pos[i] = (x + imgs[i].width / 2, y + alt / 2)
+            x += imgs[i].width + gap_x
+        y += alt + gap_y
+    return pos
+
+
+def _momentos(linha, gatilhos):
+    """Quando cada gatilho é falado na linha; se não achar a palavra, espalha por igual."""
+    toks = [sem_acento(w).lower().strip(".,!?;:…\"'()") for w in linha["palavras"]]
+    n, out, j = len(gatilhos), [], 0
+    for k, g in enumerate(gatilhos):
+        g = sem_acento((g or "").split()[0] if (g or "").split() else "").lower().strip(".,!?;:")
+        achou = None
+        for i in range(j, len(toks)):
+            if g and (toks[i] == g or (len(g) >= 4 and toks[i].startswith(g[:4]))):
+                achou = i
+                break
+        if achou is not None:
+            out.append(linha["tempos"][achou][0])
+            j = achou + 1
+        else:
+            out.append(linha["ini"] + (linha["fim"] - linha["ini"]) * (0.1 + 0.75 * k / max(1, n - 1)))
+    for k in range(1, n):
+        out[k] = max(out[k], out[k - 1] + 0.25)
+    return out
+
+
+def _blocos(palavras):
+    """Legenda em blocos de até 3 palavras (máx. 16 letras), igual às legendas do TikTok."""
+    blocos, atual = [], []
+    for i in range(len(palavras)):
+        if atual and (len(atual) >= 3 or len(" ".join(palavras[j] for j in atual + [i])) > 16):
+            blocos.append(atual)
+            atual = []
+        atual.append(i)
+    if atual:
+        blocos.append(atual)
+    return blocos
+
+
+def _legenda_tv(palavras, bloco, ativo):
+    fnt = forte(66)
+    d0 = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+    linhas, atual = [], []
+    for i in bloco:
+        if atual and d0.textlength(" ".join(palavras[j] for j in atual + [i]), font=fnt) > TV_LEGENDA_LARG - 50:
+            linhas.append(atual)
+            atual = []
+        atual.append(i)
+    if atual:
+        linhas.append(atual)
+    larg = max(d0.textlength(" ".join(palavras[j] for j in ln), font=fnt) for ln in linhas)
+    img = Image.new("RGBA", (int(larg) + 56, len(linhas) * 82 + 34), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle((0, 0, img.width - 1, img.height - 1), 30, fill=(0, 0, 0, 150))
+    y = 17 + 41
+    for ln in linhas:
+        texto = " ".join(palavras[j] for j in ln)
+        x = (img.width - d.textlength(texto, font=fnt)) / 2
+        for j in ln:
+            d.text((x, y), palavras[j], font=fnt, fill=AMARELO if j == ativo else "white", anchor="lm",
+                   stroke_width=4, stroke_fill=PRETO)
+            x += d.textlength(palavras[j] + " ", font=fnt)
+        y += 82
+    return img
+
+
+def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd):
+    fps = 30
+    pct = round(p["desconto"] * 100)
+
+    # 1) vozes: cada fala começa logo depois da outra (corta o silêncio das pontas)
+    linhas, t, anterior = [], 0.15, None
+    for k, ln in enumerate(falas):
+        audio = pasta / f"tv{k}.mp3"
+        voz, tom = (VOZ_LUPI, TOM_LUPI) if ln["quem"] == "lupi" else (VOZ_AMIGA, TOM_AMIGA)
+        ok, pals = narrar_tempos(ln["fala"], audio, voz=voz, tom=tom, ritmo=RITMO_TELA_VERDE)
+        dur = duracao(audio) if ok else max(1.2, len(ln["fala"]) / 15)
+        vol = volume_por_quadro(audio, fps) if ok else []
+        ini_fala, fim_fala = 0.0, dur
+        ativos = [i for i, v in enumerate(vol) if v > 0.06]
+        if ativos:
+            ini_fala = max(0.0, ativos[0] / fps - 0.03)
+            fim_fala = min(dur, (ativos[-1] + 1) / fps + 0.05)
+        if anterior is not None:
+            t += 0.22 if anterior != ln["quem"] else 0.08
+        toks = [w for w in ln["fala"].split() if _palavra_legenda(w)]
+        if len(pals) == len(toks):
+            tempos = [(a, b) for a, b, _ in pals]
+        else:
+            tempos = [(ini_fala + a, ini_fala + b)
+                      for a, b, _ in _tempos_estimados(" ".join(toks), fim_fala - ini_fala)]
+        comeco = t - ini_fala                     # quando o áudio começa a tocar
+        legenda = [_palavra_legenda(w) for w in toks]
+        linhas.append({**ln, "audio": audio if ok else None, "comeco": comeco, "ini": t,
+                       "fim": t + fim_fala - ini_fala, "vol": vol, "palavras": toks, "legenda": legenda,
+                       "tempos": [(comeco + a, comeco + b) for a, b in tempos], "blocos": _blocos(legenda)})
+        t += fim_fala - ini_fala
+        anterior = ln["quem"]
+    total = t + 0.8
+
+    # 2) seções (o que aparece em cima) e planos (enquadramentos de ~2,4 s, cortando junto com a fala)
+    secoes = []
+    for ln in linhas:
+        if secoes and secoes[-1]["secao"] == ln["secao"]:
+            secoes[-1]["linhas"].append(ln)
+        else:
+            secoes.append({"secao": ln["secao"], "linhas": [ln], "ini": ln["ini"] - 0.06})
+    secoes[0]["ini"] = 0.0
+    for a, b in zip(secoes, secoes[1:]):
+        a["fim"] = b["ini"]
+    secoes[-1]["fim"] = total
+
+    # cenários: foto 1, foto 2 e as versões em fundo colorido, intercalados (cada corte muda o visual)
+    c1 = _cenarios(f1, rnd)
+    c2 = _cenarios(f2, rnd) if f2 is not f1 else []
+    canvases = [c1[0]] + [c for par in zip(c2 + [None] * 3, c1[1:] + [None] * 3) for c in par if c]
+    movs = list(TV_MOVIMENTOS)
+    rnd.shuffle(movs)
+    planos = []
+    for s in secoes:
+        n = max(1, int(round((s["fim"] - s["ini"]) / TV_PLANO)))
+        for k in range(n):
+            planos.append({"ini": s["ini"] + (s["fim"] - s["ini"]) * k / n,
+                           "fim": s["ini"] + (s["fim"] - s["ini"]) * (k + 1) / n, "secao": s["secao"]})
+    outros = list(range(1, len(canvases))) or [0]
+    for i, pl in enumerate(planos):
+        if i == 0:
+            pl["foto"], pl["mov"] = (1 if len(canvases) > 1 else 0), "abre"
+        elif i == len(planos) - 1:
+            pl["foto"], pl["mov"] = 0, "fecha"
+        elif pl["secao"] in ("preco", "cta"):        # fundo da foto original: o amarelo aparece bem
+            pl["foto"], pl["mov"] = 0, "detalhe"
+        else:
+            pl["foto"], pl["mov"] = outros[i % len(outros)], movs[i % len(movs)]
+        if i and pl["foto"] == planos[i - 1]["foto"] and pl["mov"] == planos[i - 1]["mov"]:
+            pl["mov"] = movs[(i + 1) % len(movs)]
+
+    # 3) camadas de cada seção: (imagem, centro x, centro y, a partir de quando)
+    camadas_secao, sons = {}, []
+    for si, s in enumerate(secoes):
+        tipo, ln0, cam = s["secao"], s["linhas"][0], []
+        if tipo == "produto":
+            img = _cartao_nome(nome)
+            cam.append((img, W / 2, TV_TEXTO_Y + img.height / 2, s["ini"] + 0.05))
+        elif tipo == "preco":
+            img = _cartao_preco(p, pct)
+            cam.append((img, W / 2, TV_TEXTO_Y + img.height / 2, s["ini"] + 0.05))
+            sons.append((s["ini"] + 0.3, "plim", 0.45))
+        elif tipo in ("usos", "beneficios", "prova"):
+            if tipo == "usos":
+                itens = [(u, "check") for u in ia.get("usos", [])]
+                gat = [u for u, _ in itens]
+            elif tipo == "beneficios":
+                itens = [(b, "check") for b in ia.get("beneficios", [])[:3]]
+                gat = [""] * len(itens)
+            else:
+                itens = [(f"{p['nota']:.1f}".replace(".", ",") + " na Shopee", "nota"),
+                         (f"{vendas_texto(p['vendas'])} {METRICA}", "branca")]
+                gat = ["nota", "com"]
+                if p.get("nacional", True):
+                    itens.append(("enviado do Brasil", "verde"))
+                    gat.append("enviado")
+            imgs = [_etiqueta(txt, est) for txt, est in itens]
+            pos = _fileiras(imgs, TV_TEXTO_Y + 10)
+            for img, (x, y), quando in zip(imgs, pos, _momentos(ln0, gat)):
+                cam.append((img, x, y, quando))
+                sons.append((quando, "pop", 0.4))
+        elif tipo == "cta":
+            img = _cartao_cta()
+            cam.append((img, W / 2, TV_TEXTO_Y + img.height / 2, s["ini"] + 0.05))
+        camadas_secao[si] = cam
+        if si > 0:
+            sons.append((s["ini"] - 0.1, "whoosh", 0.3))
+    topo_img = Image.new("RGBA", (W, 120), (0, 0, 0, 0))
+    pilula(topo_img, "link no perfil  ↗", W / 2, 60, media(40), (0, 0, 0, 150), "white", px=30, py=14)
+
+    # 4) áudio: falas no tempo certo + efeitos
+    efeitos = gerar_efeitos(pasta)
+    entradas, filtros, mix = [], [], []
+    for ln in linhas:
+        if ln["audio"]:
+            entradas.append(ln["audio"])
+            ms = int(max(0.0, ln["comeco"]) * 1000)
+            filtros.append(f"[{len(entradas) - 1}:a]adelay={ms}|{ms}[a{len(entradas) - 1}]")
+            mix.append(f"[a{len(entradas) - 1}]")
+    for quando, nome_som, vol in sons:
+        entradas.append(efeitos[nome_som])
+        k = len(entradas) - 1
+        ms = int(max(0.0, quando) * 1000)
+        filtros.append(f"[{k}:a]adelay={ms}|{ms},volume={vol}[a{k}]")
+        mix.append(f"[a{k}]")
+    n_quadros = int(math.ceil(total * fps))
+    audio_final = pasta / "audio.wav"
+    cmd = ["ffmpeg", "-y", "-loglevel", "error"]
+    for e in entradas:
+        cmd += ["-i", str(e)]
+    if not entradas:
+        cmd += ["-f", "lavfi", "-t", f"{total:.2f}", "-i", "anullsrc=r=44100:cl=stereo"]
+        filtros, mix = ["[0:a]anull[a0]"], ["[a0]"]
+    filtros.append("".join(mix) + f"amix=inputs={len(mix)}:normalize=0,"
+                   "loudnorm=I=-15:TP=-1.5:LRA=11,apad[out]")      # volume no padrão das redes
+    cmd += ["-filter_complex", ";".join(filtros), "-map", "[out]", "-t", f"{n_quadros / fps:.3f}",
+            "-ar", "44100", "-ac", "2", str(audio_final)]
+    subprocess.run(cmd, check=True)
+
+    # 5) quadro a quadro: enquadramento da foto + textos de cima + Lupi + legenda
+    proc = subprocess.Popen(
+        ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}",
+         "-r", str(fps), "-i", "-", "-i", str(audio_final), "-map", "0:v", "-map", "1:a",
+         "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
+         "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", str(Path(destino).resolve())],
+        stdin=subprocess.PIPE)
+    sprites, cache = {}, {}
+
+    def lupi(boca, olhos, pose):
+        if (boca, olhos, pose) not in sprites:
+            sprites[(boca, olhos, pose)] = desenhar_lupi(TV_LUPI_ALTURA, boca, olhos, pose)
+        return sprites[(boca, olhos, pose)]
+
+    for q in range(n_quadros):
+        tt = q / fps
+        pl = next((x for x in planos if x["ini"] <= tt < x["fim"]), planos[-1])
+        u = min(1.0, (tt - pl["ini"]) / max(0.05, pl["fim"] - pl["ini"]))
+        fundo, cy = canvases[pl["foto"]]
+        z, cx, cy2 = _camera(pl["mov"], u, cy)
+        z *= 1 + 0.05 * max(0.0, 1 - (tt - pl["ini"]) * fps / 5)       # pulinho a cada corte
+        quadro = _enquadrar(fundo, z, cx, cy2)
+
+        si = next((i for i, s in enumerate(secoes) if s["ini"] <= tt < s["fim"]), len(secoes) - 1)
+        s = secoes[si]
+        if s["secao"] not in ("gancho", "cta"):
+            quadro.paste(topo_img, (0, 262 - 60), topo_img)
+        if s["secao"] == "gancho":
+            ln = s["linhas"][0]
+            ativo = -1
+            if ln["ini"] - 0.05 <= tt <= ln["fim"]:
+                ativo = max([k for k, (a, b) in enumerate(ln["tempos"]) if tt >= a] or [0])
+            chave = ("pergunta", ativo)
+            if chave not in cache:
+                cache[chave] = _cartao_pergunta(ln["palavras"], ativo)
+            img = cache[chave]
+            _colar(quadro, img, W / 2, TV_TEXTO_Y - 30 + img.height / 2, int((tt - 0.0) * fps))
+        for img, x, y, quando in camadas_secao[si]:
+            if tt >= quando:
+                _colar(quadro, img, x, y, int((tt - quando) * fps))
+
+        # fala de agora (pra boca do Lupi e a legenda)
+        atual = next((ln for ln in linhas if ln["ini"] - 0.05 <= tt <= ln["fim"] + 0.12), None)
+        falando = atual is not None and atual["quem"] == "lupi"
+        boca = "sorriso"
+        if falando and atual["vol"]:
+            i = int((tt - atual["comeco"]) * fps)
+            v = atual["vol"][i] if 0 <= i < len(atual["vol"]) else 0
+            boca = "aberta" if v > 0.55 else ("meia" if v > 0.22 else "sorriso")
+        olhos = "fechados" if ((q + 50) % 96) in (0, 1, 2, 3) else "abertos"   # 1º quadro (capa) de olho aberto
+        pose = "aponta" if s["secao"] == "cta" else "normal"
+        pulo = abs(math.sin(tt * 7)) * 10 if falando else 3 * math.sin(tt * 2)
+        sp = lupi(boca, olhos, pose)
+        quadro.paste(sp, (-20, int(TV_LUPI_PE - sp.height - pulo)), sp)
+
+        if falando and atual["legenda"]:
+            k_ativo = max([k for k, (a, b) in enumerate(atual["tempos"]) if tt >= a] or [0])
+            bi = next(i for i, b in enumerate(atual["blocos"]) if k_ativo in b)
+            chave = (id(atual), bi, k_ativo)
+            if chave not in cache:
+                if len(cache) > 40:
+                    cache.clear()
+                cache[chave] = _legenda_tv(atual["legenda"], atual["blocos"][bi], k_ativo)
+            inicio_bloco = atual["tempos"][atual["blocos"][bi][0]][0]
+            img = cache[chave]
+            _colar(quadro, img, TV_LEGENDA[0], TV_LEGENDA[1], max(0, int((tt - inicio_bloco) * fps)))
+        proc.stdin.write(quadro.tobytes())
+    proc.stdin.close()
+    if proc.wait() != 0:
+        raise RuntimeError("ffmpeg falhou ao montar o vídeo tela verde")
+
+
+def fazer_tela_verde(produtos, palavra, hist, pasta_dia, rnd, usar_feed, sub):
+    p = escolher_promo(produtos, hist)
+    if not p:
+        return None
+    link = obter_link(p, usar_feed, sub)
+    ia = roteiro_ia(p)
+    print(f"  produto: {p['nome'][:70]} | IA: {'sim' if ia else 'não (texto padrão)'}")
+    nome = nome_promo(p, ia, palavra)
+    pct = round(p["desconto"] * 100)
+    slug = re.sub(r"[^a-z0-9]+", "-", sem_acento(palavra).lower()).strip("-")
+    pasta = pasta_dia / slug
+    pasta.mkdir(exist_ok=True)
+    f1 = baixar_foto(p["imagem"], pasta / "foto1.jpg")
+    f2 = f1
+    if p.get("imagem2"):
+        try:
+            f2 = baixar_foto(p["imagem2"], pasta / "foto2.jpg")
+        except Exception:
+            f2 = f1
+    falas = roteiro_tela_verde(p, ia, palavra, rnd)
+    video = pasta_dia / f"{slug}.mp4"
+    montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, video, rnd)
+    dialogo = "\n".join(f"{'Lupi' if x['quem'] == 'lupi' else 'Amiga'}: {x['fala']}" for x in falas)
+    resumo = (f"🎬 {nome} — pronto pra postar\n"
+              f"De {reais(p['preco_cheio'])} por {reais(p['preco'])} (-{pct}%)\n"
+              + aviso_link(link, usar_feed) + f"\n{dialogo}")
+    return {"titulo": nome, "video": video, "resumo": resumo,
+            "legenda": legenda_promo(p, ia, palavra),
+            "canal": canal_promo(p, ia, palavra, link),
+            "whatsapp": whatsapp_promo(p, ia, palavra, link),
+            "foto_canal": p["imagem"], "ids": [p["id"]],
+            "registro": oferta_registro_promo(p, ia, palavra, link)}
+
+
 def baixar_foto(url, destino):
     if MODO_TESTE:
         return foto_falsa(url, destino)
@@ -2087,7 +2751,8 @@ def main():
     blocos_whatsapp, entregas = [], []
     feitos = 0
     sub = ["robo", hoje.strftime("%Y%m%d")]
-    fazer = {"conversa": fazer_conversa, "promo": fazer_promo}.get(FORMATO, fazer_comparativo)
+    fazer = {"telaverde": fazer_tela_verde, "conversa": fazer_conversa,
+             "promo": fazer_promo}.get(FORMATO, fazer_comparativo)
 
     for palavra in palavras:
         if feitos >= VIDEOS_POR_DIA:
@@ -2137,7 +2802,7 @@ def main():
         avisar("Pro WhatsApp (copie tudo abaixo e cole no seu canal):")
         avisar(texto)
     if feitos == 0:
-        if FORMATO in ("promo", "conversa"):
+        if FORMATO in ("promo", "conversa", "telaverde"):
             avisar("Robô: hoje não achei produto com desconto bom. Tente outras palavras em PALAVRAS "
                    "ou baixe DESCONTO_MINIMO / CURTIDAS_MINIMAS.")
         else:
