@@ -1,0 +1,110 @@
+name: Testar feed
+
+on:
+  workflow_dispatch:
+
+jobs:
+  testar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Diagnóstico do Telegram e do feed
+        env:
+          FEED: ${{ secrets.SHOPEE_FEED_URL }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python3 - <<'FIM'
+          import csv, io, json, os, re, zlib, urllib.request, urllib.parse, urllib.error
+
+          TOKEN = os.environ.get("TELEGRAM_TOKEN", "").strip()
+          CHAT = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+          FEED = os.environ.get("FEED", "").strip()
+          rel = []
+
+          def tg(metodo, **p):
+              url = f"https://api.telegram.org/bot{TOKEN}/{metodo}"
+              try:
+                  with urllib.request.urlopen(url, data=urllib.parse.urlencode(p).encode(), timeout=30) as r:
+                      return json.loads(r.read())
+              except urllib.error.HTTPError as e:
+                  try:
+                      return json.loads(e.read())
+                  except Exception:
+                      return {"ok": False, "error_code": e.code, "description": str(e)}
+              except Exception as e:
+                  return {"ok": False, "description": str(e)}
+
+          # 1) Telegram
+          formato_ok = re.fullmatch(r"\d{6,12}:[\w-]{30,50}", TOKEN) is not None
+          eu = tg("getMe")
+          if eu.get("ok"):
+              rel.append(f"Telegram: OK (bot @{eu['result']['username']})")
+          else:
+              rel.append(f"Telegram: ERRO {eu.get('error_code', '')} {eu.get('description', '')}"
+                         f" | token com {len(TOKEN)} caracteres, formato {'certo' if formato_ok else 'ERRADO'}")
+          chat_ok = re.fullmatch(r"-?\d+", CHAT) is not None
+          rel.append(f"Chat ID: {'ok' if chat_ok else 'formato estranho'}")
+
+          # 2) Feed
+          amostra = h = None
+          if not FEED:
+              rel.append("Feed: falta o segredo SHOPEE_FEED_URL")
+          else:
+              partes = urllib.parse.urlsplit(FEED)
+              ident = urllib.parse.parse_qs(partes.query).get("id", [""])[0]
+              rel.append(f"Feed: {partes.netloc}{partes.path} (id com {len(ident)} caracteres)")
+              navegador = {
+                  "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 "
+                                "(KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+                  "Accept": "text/csv,text/plain,*/*",
+                  "Accept-Language": "pt-BR,pt;q=0.9",
+                  "Referer": "https://affiliate.shopee.com.br/",
+              }
+              for nome, cab in (("simples", {}), ("como navegador", navegador)):
+                  saltos = []
+                  class Rastro(urllib.request.HTTPRedirectHandler):
+                      def redirect_request(self, req, fp, code, msg, hdrs, newurl):
+                          saltos.append(f"{code}->{urllib.parse.urlsplit(newurl).netloc}")
+                          return super().redirect_request(req, fp, code, msg, hdrs, newurl)
+                  try:
+                      r = urllib.request.build_opener(Rastro).open(
+                          urllib.request.Request(FEED, headers=cab), timeout=60)
+                      amostra, h = r.read(400_000), r.headers
+                      rel.append(f"Download {nome}: OK {' '.join(saltos)}")
+                      break
+                  except urllib.error.HTTPError as e:
+                      corpo = re.sub(r"\s+", " ", e.read(400).decode("utf-8", "replace"))[:250]
+                      onde = urllib.parse.urlsplit(getattr(e, "filename", "") or "").netloc
+                      rel.append(f"Download {nome}: ERRO {e.code} em {onde} {' '.join(saltos)} | resposta: {corpo}")
+                  except Exception as e:
+                      rel.append(f"Download {nome}: ERRO {e}")
+
+          # 3) Colunas
+          if amostra:
+              tamanho = h.get("Content-Length")
+              tamanho = f"{int(tamanho) / 1e6:.0f} MB" if tamanho else "desconhecido"
+              if amostra[:2] == b"\x1f\x8b":
+                  tipo, amostra = "gzip", zlib.decompressobj(16 + zlib.MAX_WBITS).decompress(amostra)
+              elif amostra[:2] == b"PK":
+                  tipo = "zip"
+              else:
+                  tipo = "texto"
+              rel.append(f"Tamanho: {tamanho} ({tipo})")
+              if tipo != "zip":
+                  texto = amostra.decode("utf-8-sig", errors="replace")
+                  cab = texto.split("\n", 1)[0]
+                  sep = max([",", ";", "\t", "|"], key=cab.count)
+                  linhas = list(csv.reader(io.StringIO(texto), delimiter=sep))
+                  colunas, ex = linhas[0], (linhas[1] if len(linhas) > 1 else [])
+                  rel.append(f"Colunas ({len(colunas)}, separador {sep!r}):")
+                  for i, c in enumerate(colunas):
+                      v = re.sub(r"\s+", " ", ex[i])[:70] if i < len(ex) else ""
+                      rel.append(f"{i + 1}. {c} = {v}")
+
+          relatorio = "\n".join(rel)
+          print(relatorio)
+          if eu.get("ok"):
+              for i in range(0, len(relatorio), 3800):
+                  tg("sendMessage", chat_id=CHAT, text=relatorio[i:i + 3800], disable_web_page_preview="true")
+          FIM
