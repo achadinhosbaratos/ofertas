@@ -1,6 +1,72 @@
 [
  {
   "tipo": "promo",
+  "data": "2026-11-08",
+  "palavra": "aspirador portátil",
+  "metrica": "curtidas",
+  "produto": {
+   "nome": "Aspirador De Pó, Água e Objetos Sem Fio Portátil Turbo Potente Artiko Aquadust Bivolt…",
+   "nome_curto": "Aspirador sem fio AquaDust",
+   "preco": 209.9,
+   "preco_cheio": 289.9,
+   "desconto": 0.2759572266298723,
+   "imagem": "https://cf.shopee.com.br/file/br-11134207-7r98o-lqnmb7ouao7702",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F316869228%2F10628394428",
+   "nota": 4.89,
+   "pop": 7428,
+   "beneficios": [
+    "Aspira pó líquidos e objetos",
+    "Filtro HEPA lavável",
+    "Carregamento via USB"
+   ]
+  }
+ },
+ {
+  "tipo": "promo",
+  "data": "2026-11-08",
+  "palavra": "air fryer",
+  "metrica": "curtidas",
+  "produto": {
+   "nome": "Air Fryer Philco 4,4L Antiaderente Redstone 1500W PFR15PI",
+   "nome_curto": "Air Fryer Philco Redstone",
+   "preco": 243.9,
+   "preco_cheio": 349.9,
+   "desconto": 0.3029436981994855,
+   "imagem": "https://cf.shopee.com.br/file/sg-11134201-8258m-mudia6o4imtk24",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F811034337%2F21299208174",
+   "nota": 4.95,
+   "pop": 56580,
+   "beneficios": [
+    "Cesto antiaderente fácil de limpar",
+    "Alta potência de 1500W",
+    "Pouquíssimo ou nenhum óleo"
+   ]
+  }
+ },
+ {
+  "tipo": "promo",
+  "data": "2026-11-08",
+  "palavra": "fone bluetooth",
+  "metrica": "curtidas",
+  "produto": {
+   "nome": "Astgn X Basike Original sem fio anti-ruído fone de ouvido bluetooth efeito de som de…",
+   "nome_curto": "Headphone Sem Fio Basike",
+   "preco": 169.99,
+   "preco_cheio": 250.0,
+   "desconto": 0.32004,
+   "imagem": "https://cf.shopee.com.br/file/br-11134211-7r98o-lzfvitckspid55",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F992612253%2F20497677095",
+   "nota": 4.91,
+   "pop": 31432,
+   "beneficios": [
+    "Cancelamento de ruído ANC",
+    "Bateria de 30 horas",
+    "Design leve e dobrável"
+   ]
+  }
+ },
+ {
+  "tipo": "promo",
   "data": "2026-11-07",
   "palavra": "aspirador portátil",
   "metrica": "curtidas",
