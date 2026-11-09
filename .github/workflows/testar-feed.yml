@@ -99,7 +99,7 @@ jobs:
                   colunas, ex = linhas[0], (linhas[1] if len(linhas) > 1 else [])
                   rel.append(f"Colunas ({len(colunas)}, separador {sep!r}):")
                   for i, c in enumerate(colunas):
-                      v = re.sub(r"\s+", " ", ex[i])[:70] if i < len(ex) else ""
+                      v = re.sub(r"\s+", " ", ex[i])[:400] if i < len(ex) else ""
                       rel.append(f"{i + 1}. {c} = {v}")
 
           relatorio = "\n".join(rel)

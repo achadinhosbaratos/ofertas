@@ -2,13 +2,28 @@ name: Robô de achadinhos
 
 on:
   schedule:
-    - cron: "17 11 * * *"   # todo dia às 08:17 (horário de Brasília)
+    - cron: "47 10 * * *"   # 07:47 (Brasília): kit do dia no Telegram (fotos + texto pro Flow)
+    - cron: "47 14 * * *"   # 11:47 (Brasília): monta e entrega o 1º vídeo
+    - cron: "47 22 * * *"   # 19:47 (Brasília): monta e entrega o 2º vídeo
   workflow_dispatch:         # botão "Run workflow" pra rodar na hora
+    inputs:
+      modo:
+        description: "postar = próximo vídeo do dia · kit = manda o kit de novo · completo = jeito antigo, sem Flow"
+        type: choice
+        default: postar
+        options: [postar, kit, completo]
 
 permissions:
-  contents: write   # salvar histórico e ofertas
+  contents: write   # salvar histórico, ofertas e a fila do dia
   pages: write      # publicar a página de ofertas
   id-token: write
+
+concurrency:
+  group: robo       # nunca roda duas vezes ao mesmo tempo
+  cancel-in-progress: false
+
+env:
+  TZ: America/Sao_Paulo   # datas e "preço visto em" no horário de Brasília
 
 jobs:
   rodar:
@@ -19,6 +34,8 @@ jobs:
       url: ${{ steps.publicar.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -41,23 +58,31 @@ jobs:
           SHOPEE_FEED_URL: ${{ secrets.SHOPEE_FEED_URL }}
           SHOPEE_APP_ID: ${{ secrets.SHOPEE_APP_ID }}
           SHOPEE_SECRET: ${{ secrets.SHOPEE_SECRET }}
+          SHOPEE_AFFILIATE_ID: ${{ secrets.SHOPEE_AFFILIATE_ID }}   # seu ID de afiliado da Shopee
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_CANAL: ${{ secrets.TELEGRAM_CANAL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}   # IA do Google que escreve os roteiros
-        run: python bot.py
+        run: |
+          MODO="${{ inputs.modo }}"
+          if [ -z "$MODO" ]; then
+            if [ "${{ github.event.schedule }}" = "47 10 * * *" ]; then MODO=kit; else MODO=postar; fi
+          fi
+          echo "Modo: $MODO"
+          python bot.py "$MODO"
 
-      - name: Guardar histórico e ofertas
+      - name: Guardar histórico, ofertas e fila
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add historico.json ofertas.json || true
-          git commit -m "robô $(date +%F)" || echo "nada novo"
+          git add historico.json ofertas.json fila.json 2>/dev/null || true
+          git commit -m "robô $(date +%F) $(date +%H:%M)" || echo "nada novo"
+          git pull --rebase --autostash || true
           git push || echo "não deu pra salvar"
 
       - name: Preparar a página
-        if: always()
+        if: always() && hashFiles('site/index.html') != ''
         continue-on-error: true
         uses: actions/upload-pages-artifact@v3
         with:
@@ -65,6 +90,6 @@ jobs:
 
       - name: Publicar a página
         id: publicar
-        if: always()
+        if: always() && hashFiles('site/index.html') != ''
         continue-on-error: true
         uses: actions/deploy-pages@v4
