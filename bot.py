@@ -95,7 +95,8 @@ RITMO_TELA_VERDE = "+15%"        # tela verde: fala mais rápida, como nos víde
 
 # Clipes do Google Flow: de manhã o robô manda no Telegram as fotos e o texto pronto de cada produto;
 # você gera o clipe no Flow (celular) e manda de volta pro robô. Ele confere se o produto saiu igual
-# e usa o clipe no começo do vídeo. Se o clipe não chegar a tempo, o vídeo sai só com as fotos.
+# e usa o clipe em quase todo o vídeo: inteiro no começo, depois trechos dele com zoom, e a foto do
+# produto só no final, com a chamada. Se o clipe não chegar a tempo, o vídeo sai só com as fotos.
 USAR_FLOW = True
 MODELO_FLOW = "Omni 1.2 Flash"     # 24 créditos por clipe; o "Veo 3.1 - Lite" custa 10, mas erra mais o produto
 CREDITOS_FLOW = 24
@@ -378,6 +379,17 @@ def reais_falado(v):
     return f"{inteiro} reais e {cent}" + (" centavos" if cent < 10 else "")
 
 
+def reais_curto(v):
+    """Preço do jeito que se fala rápido: '49 e 90' (ou '50 reais' quando não tem centavos)."""
+    inteiro = int(v)
+    cent = int(round((v - inteiro) * 100))
+    if cent == 100:
+        inteiro, cent = inteiro + 1, 0
+    if not cent:
+        return f"{inteiro} reais"
+    return f"{inteiro} e {cent}" if cent >= 10 else reais_falado(v)
+
+
 def vendas_texto(n):
     if 1000 <= n < 2000:
         return "mais de mil"
@@ -483,7 +495,7 @@ PROIBIDO = ["pouco tempo", "ultimas unidades", "so hoje", "acaba hoje", "estoque
             "relampago", "corre que acaba", "nao vai durar", "por tempo limitado"]
 
 IA_SISTEMA = (
-    "Você escreve roteiros de anúncios curtos (vídeos de 20 segundos) para TikTok e Reels, "
+    "Você escreve roteiros de anúncios curtos (vídeos de 15 segundos) para TikTok e Reels, "
     "em português do Brasil, com tom animado e natural. Regras: use SOMENTE informações que "
     "estão no título e na descrição; não invente medidas, materiais, garantias, resultados nem "
     "depoimentos; não fale de prazo da promoção, de estoque nem de 'pouco tempo'; não mencione "
@@ -654,22 +666,16 @@ def roteiro_ia(p):
         f"Descrição do vendedor (pode estar bagunçada): {p.get('descricao', '')[:1500]}\n\n"
         "Devolva JSON com estas chaves:\n"
         '"nome_curto": nome simples do produto, até 4 palavras, do jeito que as pessoas falam no dia a dia;\n'
-        '"pergunta_amiga": pergunta curta (até 12 palavras) que uma amiga faria ao Lupi sobre o problema '
+        '"pergunta_amiga": pergunta bem curta (até 9 palavras) que uma amiga faria ao Lupi sobre o problema '
         'do dia a dia que esse produto resolve, sem citar o produto (ex.: "Lupi, tem jeito de ... sem ...?");\n'
         '"gancho": frase de abertura que prende a atenção nos 2 primeiros segundos, até 8 palavras, '
         'de preferência uma pergunta sobre o problema que o produto resolve ou uma curiosidade;\n'
         '"beneficios": lista com 3 funções ou vantagens reais do produto, cada uma com até 5 palavras;\n'
         '"fala_beneficios": 1 ou 2 frases curtas para narração, em tom de conversa, começando pelo '
         'problema que ele resolve, até 25 palavras;\n'
-        '"como_funciona": resposta do Lupi à pergunta da amiga: responde direto, apresenta o produto '
-        '("Esse é o..."/"Essa é a...") e diz de um jeito simples como ele funciona, até 22 palavras;\n'
-        '"usos": lista com 3 ou 4 situações ou coisas concretas do dia a dia em que o produto serve, '
-        'cada uma com 1 a 3 palavras (ex.: "cebola", "alho", "molho"), só o que o título e a descrição confirmam;\n'
-        '"fala_usos": 1 frase falada que cita esses usos na mesma ordem, até 18 palavras '
-        '(ex.: "Serve pra cebola, alho, salsinha e até pra fazer molho.");\n'
-        '"volta_gancho": frase bem curta que fecha o assunto da pergunta da amiga, até 6 palavras '
-        '(ex.: "Sem faca e sem chorar!");\n'
-        '"resumo": uma frase-resumo no formato "Um/Uma ... só pra ...", até 12 palavras.'
+        '"como_funciona": resposta do Lupi à pergunta da amiga, uma frase só, até 14 palavras: diz o que '
+        'o produto é e o principal problema que ele resolve ou o diferencial dele, sem explicar passo a passo '
+        '(ex.: "Esse mop lava e seca no próprio balde, sem pôr a mão na água.").'
     )
     texto = chamar_ia([{"role": "system", "content": IA_SISTEMA},
                        {"role": "user", "content": pedido}])
@@ -722,7 +728,7 @@ def legenda_promo(p, ia, palavra, ia_video=False):
     linhas += ["🔗 Link na bio",
                f"📩 No Instagram: comenta {PALAVRA_DM} que eu te mando no direct", ""]
     if ia_video:
-        linhas.append("🤖 Cena do começo gerada por IA; o produto é o do anúncio.")
+        linhas.append("🤖 Cenas do produto em uso geradas por IA; o produto é o do anúncio.")
     linhas += [f"Preço visto em {dt.date.today():%d/%m}, pode mudar.",
                f"#achadinhos #shopee #{tag} (link de afiliado)"]
     return "\n".join(linhas)
@@ -1725,8 +1731,7 @@ def fazer_conversa(produtos, palavra, hist, pasta_dia, rnd, usar_feed, sub):
 # Formato "tela verde": o produto em tela cheia, trocando de enquadramento a cada 2–3 s,
 # e o Lupi no canto apresentando (como os afiliados que gravam com o efeito Tela Verde).
 # A amiga abre com a pergunta; o resto o Lupi fala sozinho, mais rápido.
-# Roteiro: dor -> o que é e como funciona -> preço -> usos concretos -> volta no gancho
-#          -> nota -> resumo -> chamada.
+# Roteiro curto (uns 15 s): dor -> o que é e o que resolve -> preço -> nota -> chamada.
 # Cada quadro é desenhado aqui no Python e vai direto pro ffmpeg.
 # ------------------------------------------------------------
 TV_TEXTO_Y = 300            # topo dos textos de cima (pergunta, nome, preço, usos, nota, chamada)
@@ -1751,29 +1756,25 @@ def roteiro_tela_verde(p, ia, palavra, rnd):
     tem_ia = bool(ia.get("pergunta_amiga") and ia.get("como_funciona"))
     pergunta = ia["pergunta_amiga"] if tem_ia else rnd.choice([
         "Lupi, achou alguma coisa boa hoje?", "E aí, Lupi, qual é o achado de hoje?"])
+    if len(pergunta.split()) > 11 and ia.get("gancho", "").endswith("?"):
+        pergunta = ia["gancho"]                   # a pergunta veio comprida: o gancho é mais curto
     apresenta = ia["como_funciona"] if tem_ia else rnd.choice([
         f"Achei! Olha só: {nome}.", f"Achei sim! Olha isso: {nome}."])
+    if len(apresenta.split()) > 18:               # veio comprida: fica só a 1ª frase, se ela for curta
+        primeira = re.split(r"(?<=[.!?])\s+", apresenta)[0]
+        apresenta = primeira if len(primeira.split()) <= 18 else f"Olha só: {nome}."
     falas = [
         {"secao": "gancho", "quem": "amiga", "fala": pergunta},
         {"secao": "produto", "quem": "lupi", "fala": apresenta},
         {"secao": "preco", "quem": "lupi",
-         "fala": f"E tá de {reais_falado(p['preco_cheio'])} por {reais_falado(p['preco'])} na Shopee!"},
+         "fala": f"De {reais_curto(p['preco_cheio'])} por {reais_curto(p['preco'])} na Shopee!"},
     ]
-    if ia.get("usos") and ia.get("fala_usos"):
-        falas.append({"secao": "usos", "quem": "lupi", "fala": ia["fala_usos"]})
-    elif ia.get("beneficios") and ia.get("fala_beneficios"):
-        falas.append({"secao": "beneficios", "quem": "lupi", "fala": ia["fala_beneficios"]})
-    if tem_ia and ia.get("volta_gancho"):
-        falas.append({"secao": "volta", "quem": "lupi", "fala": ia["volta_gancho"]})
-    if p["nota"] >= 1:
-        envio = ", e é enviado do Brasil" if p.get("nacional", True) else ""
-        falas.append({"secao": "prova", "quem": "lupi",
-                      "fala": f"Nota {nota} na Shopee, com {vendas_texto(p['vendas'])} {METRICA}{envio}!"})
-    if ia.get("resumo"):
-        falas.append({"secao": "resumo", "quem": "lupi", "fala": ia["resumo"]})
-    falas.append({"secao": "cta", "quem": "lupi", "fala": rnd.choice([
-        "O link tá no meu perfil. Confere o preço de hoje, que ele pode mudar!",
-        "Toca no link do meu perfil e confere o preço de hoje, que ele pode mudar!"])})
+    if p["nota"] >= 1:     # na fala só a nota e as vendas; "enviado do Brasil" fica escrito na tela
+        prova = f"Nota {nota}"
+        prova += f" e {vendas_texto(p['vendas'])} {METRICA}!" if p["vendas"] >= 100 else " na Shopee!"
+        falas.append({"secao": "prova", "quem": "lupi", "fala": prova})
+    falas.append({"secao": "cta", "quem": "lupi",
+                  "fala": "Link no meu perfil. Confere o preço de hoje, que ele pode mudar!"})
     return falas
 
 
@@ -2105,7 +2106,8 @@ class LeitorClipe:
     """Lê o clipe do Flow quadro a quadro, já no tamanho da tela (1080x1920), sem o som.
     Clipe deitado (16:9) fica inteiro no meio, com ele mesmo desfocado atrás."""
 
-    def __init__(self, caminho, fps=30):
+    def __init__(self, caminho, fps=30, inicio=0.0):
+        """inicio: segundo do clipe onde a leitura começa (o quadro 0 passa a ser esse ponto)."""
         self.dur = duracao(caminho) or 8.0
         info = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
                                "stream=width,height", "-of", "csv=p=0", str(caminho)],
@@ -2119,7 +2121,8 @@ class LeitorClipe:
                       f"boxblur=30[f];[b]scale={W}:-2[p];[f][p]overlay=(W-w)/2:(H-h)/2,fps={fps},setsar=1")
         else:
             filtro = f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},fps={fps},setsar=1"
-        self.proc = subprocess.Popen(["ffmpeg", "-v", "error", "-i", str(caminho), "-an", "-vf", filtro,
+        pular = ["-ss", f"{inicio:.3f}"] if inicio > 0 else []
+        self.proc = subprocess.Popen(["ffmpeg", "-v", "error", *pular, "-i", str(caminho), "-an", "-vf", filtro,
                                       "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], stdout=subprocess.PIPE)
         self.lidos, self.atual = 0, Image.new("RGB", (W, H))
 
@@ -2146,9 +2149,16 @@ def _etiqueta_ia():
     return img
 
 
+CLIPE_TRECHO = 2.4          # duração de cada trecho repetido do clipe (segundos)
+CLIPE_ZOOM = (1.12, 1.24)   # zoom dos trechos repetidos: começa e termina nesses valores
+CLIPE_TRECHOS_DE = [0.45, 0.2, 0.65, 0.3]   # de onde saem os trechos (fração do clipe)
+CLIPE_FOTO_FINAL = 2.5      # com clipe: segundos de foto do produto no final (chamada + Lupi apontando)
+
+
 def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd, clipe=None):
-    """clipe: vídeo do Flow (o produto sendo usado). Quando tem, ele toca no começo com o preço em cima
-    desde o primeiro quadro; depois o vídeo segue com as fotos e o Lupi, como antes."""
+    """clipe: vídeo do Flow (o produto sendo usado). Quando tem, ele é o vídeo quase todo: toca inteiro
+    no começo com o preço em cima desde o primeiro quadro; se a fala for mais longa, repete trechos dele
+    com zoom; a foto do produto e o Lupi só aparecem na chamada final. Sem clipe: fotos e o Lupi."""
     fps = 30
     pct = round(p["desconto"] * 100)
 
@@ -2194,13 +2204,24 @@ def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd, cli
         a["fim"] = b["ini"]
     secoes[-1]["fim"] = total
 
-    # clipe do Flow: toca do começo até o fim da parte do preço (no máximo 25% mais devagar)
-    leitor, fim_clipe, ritmo_clipe = None, 0.0, 1.0
+    # clipe do Flow: vai do começo até os últimos CLIPE_FOTO_FINAL segundos (ou até a chamada, se ela
+    # for curta). Toca inteiro em velocidade normal; se a fala for mais longa, o resto é preenchido
+    # com trechos do meio dele, com zoom (repeticoes).
+    leitor, fim_clipe, ritmo_clipe, repeticoes = None, 0.0, 1.0, []
     if clipe:
         leitor = LeitorClipe(clipe, fps)
-        fim_preco = next((s["fim"] for s in secoes if s["secao"] == "preco"), leitor.dur)
-        fim_clipe = min(total, leitor.dur * 1.25, max(leitor.dur, fim_preco))
-        ritmo_clipe = leitor.dur / fim_clipe if fim_clipe else 1.0
+        ini_cta = next((s["ini"] for s in secoes if s["secao"] == "cta"), total)
+        fim_clipe = min(total, max(ini_cta, total - CLIPE_FOTO_FINAL))
+        sobra = fim_clipe - leitor.dur
+        if 0 < sobra < 0.8:
+            ritmo_clipe = leitor.dur / fim_clipe          # falta pouco: o clipe toca um tiquinho mais devagar
+        elif sobra >= 0.8:
+            n = max(1, math.ceil(sobra / CLIPE_TRECHO))
+            parte = sobra / n
+            for k in range(n):
+                de = leitor.dur * CLIPE_TRECHOS_DE[k % len(CLIPE_TRECHOS_DE)]
+                repeticoes.append({"ini": leitor.dur + k * parte, "fim": leitor.dur + (k + 1) * parte,
+                                   "de": max(0.0, min(de, leitor.dur - parte)), "leitor": None})
         preco_clipe, etiqueta_ia = _cartao_preco(p, pct), _etiqueta_ia()
 
     # cenários: foto 1, foto 2 e as versões em fundo colorido, intercalados (cada corte muda o visual)
@@ -2264,10 +2285,12 @@ def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd, cli
             img = _cartao_cta()
             cam.append((img, W / 2, TV_TEXTO_Y + img.height / 2, s["ini"] + 0.05))
         camadas_secao[si] = cam
-        if si > 0 and s["ini"] >= fim_clipe:
+        if si > 0 and s["ini"] > fim_clipe:
             sons.append((s["ini"] - 0.1, "whoosh", 0.3))
     if leitor:
-        sons.append((fim_clipe - 0.1, "whoosh", 0.35))       # passagem do clipe pras fotos
+        sons.append((fim_clipe - 0.1, "whoosh", 0.35))       # passagem do clipe pra foto da chamada
+        for r in repeticoes:
+            sons.append((r["ini"] - 0.08, "whoosh", 0.22))   # corte pra cada trecho repetido
     topo_img = Image.new("RGBA", (W, 120), (0, 0, 0, 0))
     pilula(topo_img, "link no perfil  ↗", W / 2, 60, media(40), (0, 0, 0, 150), "white", px=30, py=14)
 
@@ -2314,10 +2337,20 @@ def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd, cli
             sprites[(boca, olhos, pose)] = desenhar_lupi(TV_LUPI_ALTURA, boca, olhos, pose)
         return sprites[(boca, olhos, pose)]
 
+    trecho_atual = None
     for q in range(n_quadros):
         tt = q / fps
         no_clipe = leitor is not None and tt < fim_clipe
-        if no_clipe:
+        rep = next((r for r in repeticoes if r["ini"] <= tt < r["fim"]), None) if no_clipe else None
+        if rep:
+            if rep is not trecho_atual:              # trecho novo: lê o clipe a partir do ponto escolhido
+                if trecho_atual:
+                    trecho_atual["leitor"].fechar()
+                rep["leitor"], trecho_atual = LeitorClipe(clipe, fps, inicio=rep["de"]), rep
+            u = (tt - rep["ini"]) / max(0.05, rep["fim"] - rep["ini"])
+            quadro = rep["leitor"].quadro(int((tt - rep["ini"]) * fps))
+            quadro = _enquadrar(quadro, CLIPE_ZOOM[0] + (CLIPE_ZOOM[1] - CLIPE_ZOOM[0]) * u, W / 2, H / 2)
+        elif no_clipe:
             quadro = leitor.quadro(int(tt * ritmo_clipe * fps))
         else:
             pl = next((x for x in planos if x["ini"] <= tt < x["fim"]), planos[-1])
@@ -2329,9 +2362,12 @@ def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd, cli
 
         si = next((i for i, s in enumerate(secoes) if s["ini"] <= tt < s["fim"]), len(secoes) - 1)
         s = secoes[si]
+        selos = s["secao"] in ("usos", "beneficios", "prova", "cta")
         if no_clipe:
-            # o produto em uso + o preço desde o 1º quadro (é o que segura a pessoa) + aviso de IA
-            quadro.paste(preco_clipe, (0, TV_TEXTO_Y - 30), preco_clipe)
+            # o produto em uso + o preço desde o 1º quadro (é o que segura a pessoa) + aviso de IA;
+            # na nota e na chamada, os selos (nota, vendas...) ou o "link no perfil" entram no lugar do preço
+            if not selos:
+                quadro.paste(preco_clipe, (0, TV_TEXTO_Y - 30), preco_clipe)
             quadro.paste(etiqueta_ia, (0, 200), etiqueta_ia)
         elif s["secao"] not in ("gancho", "cta"):
             quadro.paste(topo_img, (0, 262 - 60), topo_img)
@@ -2347,9 +2383,9 @@ def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd, cli
                 cache[chave] = _cartao_pergunta(ln["palavras"], ativo)
             img = cache[chave]
             _colar(quadro, img, W / 2, TV_TEXTO_Y - 30 + img.height / 2, int((tt - 0.0) * fps))
-        for img, x, y, quando in ([] if no_clipe else camadas_secao[si]):
+        for img, x, y, quando in (camadas_secao[si] if selos or not no_clipe else []):
             if tt >= quando:
-                _colar(quadro, img, x, y, int((tt - max(quando, fim_clipe)) * fps))
+                _colar(quadro, img, x, y, int((tt - (quando if no_clipe else max(quando, fim_clipe))) * fps))
 
         # fala de agora (pra boca do Lupi e a legenda)
         atual = next((ln for ln in linhas if ln["ini"] - 0.05 <= tt <= ln["fim"] + 0.12), None)
@@ -2384,6 +2420,9 @@ def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd, cli
     proc.stdin.close()
     if leitor:
         leitor.fechar()
+    for r in repeticoes:
+        if r["leitor"]:
+            r["leitor"].fechar()
     if proc.wait() != 0:
         raise RuntimeError("ffmpeg falhou ao montar o vídeo tela verde")
 
@@ -2394,7 +2433,7 @@ def _slug(palavra):
 
 def produzir_video(item, pasta_dia, rnd, clipe=None):
     """Monta o vídeo de um produto já escolhido. item: produto, ia, link, palavra, titulo, fotos_ref.
-    clipe: vídeo do Flow (opcional) pro começo."""
+    clipe: vídeo do Flow (opcional), usado até a chamada final."""
     p, ia, link, palavra, nome = item["produto"], item["ia"], item["link"], item["palavra"], item["titulo"]
     pct = round(p["desconto"] * 100)
     slug = _slug(palavra)
