@@ -56,7 +56,8 @@ PALAVRAS = [
     "kit facas cozinha",
 ]
 
-VIDEOS_POR_DIA = 3        # quantos vídeos por dia
+VIDEOS_POR_DIA = 2        # quantos vídeos por dia
+PRECO_MAXIMO = 150        # achadinho vende por impulso: acima desse preço o produto fica de fora (0 = sem limite)
 NOTA_MINIMA = 4.5         # nota mínima dos produtos (0 a 5)
 VENDAS_MINIMAS = 100      # vendas mínimas da opção barata (só no modo Open API)
 CURTIDAS_MINIMAS = 30     # curtidas mínimas da opção barata (modo feed)
@@ -92,6 +93,14 @@ VOZ = "pt-BR-FranciscaNeural"   # voz feminina; "pt-BR-AntonioNeural" é a mascu
 VELOCIDADE = "+8%"               # ritmo da narração ("+0%" normal, "+15%" mais rápido)
 RITMO_TELA_VERDE = "+15%"        # tela verde: fala mais rápida, como nos vídeos de afiliado que vendem
 
+# Clipes do Google Flow: de manhã o robô manda no Telegram as fotos e o texto pronto de cada produto;
+# você gera o clipe no Flow (celular) e manda de volta pro robô. Ele confere se o produto saiu igual
+# e usa o clipe no começo do vídeo. Se o clipe não chegar a tempo, o vídeo sai só com as fotos.
+USAR_FLOW = True
+MODELO_FLOW = "Omni 1.2 Flash"     # 24 créditos por clipe; o "Veo 3.1 - Lite" custa 10, mas erra mais o produto
+CREDITOS_FLOW = 24
+HORARIOS_POSTAGEM = ["11:47", "19:47"]   # só pra avisar no kit; os horários de verdade ficam no robo.yml
+
 # ============================================================
 # (daqui pra baixo não precisa mexer)
 # ============================================================
@@ -101,6 +110,7 @@ PASTA = Path(__file__).resolve().parent
 SAIDA = PASTA / "saida"
 HISTORICO = PASTA / "historico.json"
 OFERTAS = PASTA / "ofertas.json"
+FILA = PASTA / "fila.json"          # produtos do dia esperando o clipe do Flow
 SITE = PASTA / "site"
 W, H = 1080, 1920
 
@@ -110,12 +120,16 @@ TG_TOKEN = os.environ.get("TELEGRAM_TOKEN", "").strip()
 TG_CHAT = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 TG_CANAL = os.environ.get("TELEGRAM_CANAL", "").strip()
 FEED_URLS = os.environ.get("SHOPEE_FEED_URL", "").split()
+AFILIADO_ID = os.environ.get("SHOPEE_AFFILIATE_ID", "").strip()   # seu ID de afiliado (painel da Shopee)
 _repo = os.environ.get("GITHUB_REPOSITORY", "")          # "usuario/repositorio" quando roda no GitHub
 PAGINA_URL = (f"https://{_repo.split('/')[0]}.github.io/{_repo.split('/')[1]}/" if "/" in _repo else "")
 
 METRICA = "vendidos"      # no modo feed vira "curtidas" (o feed não informa vendas)
 
 MODO_TESTE = "--teste" in sys.argv
+# kit = manda as fotos e o texto do Flow; postar = monta e entrega o próximo vídeo do dia;
+# completo = o jeito antigo (escolhe e monta tudo de uma vez, sem Flow)
+MODO = next((a for a in sys.argv[1:] if a in ("kit", "postar", "completo")), "completo")
 
 
 # ------------------------------------------------------------
@@ -184,7 +198,7 @@ def normalizar(n):
         "desconto": num(n.get("priceDiscountRate")) / 100,
         "preco_cheio": (num(n.get("priceMin")) / (1 - num(n.get("priceDiscountRate")) / 100)
                         if 0 < num(n.get("priceDiscountRate")) < 100 else num(n.get("priceMin"))),
-        "descricao": "", "imagem2": "",
+        "descricao": "", "imagem2": "", "imagens": [n.get("imageUrl")] if n.get("imageUrl") else [],
     }
 
 
@@ -200,6 +214,10 @@ def do_feed(linha):
     cb = (linha.get("cb_option") or "").lower()
     preco = num(linha.get("sale_price")) or num(linha.get("price"))
     cheio = num(linha.get("price"))
+    # todas as fotos do anúncio (image_link, image_link_2, image_link_3...), sem repetir
+    extras = sorted((k for k in linha if k and re.fullmatch(r"image_link_\d+", k)),
+                    key=lambda k: int(k.rsplit("_", 1)[1]))
+    imagens = [u for u in dict.fromkeys([linha.get("image_link") or ""] + [linha.get(k) or "" for k in extras]) if u]
     return {
         "id": str(linha.get("itemid") or ""),
         "nome": (linha.get("title") or "").strip(),
@@ -211,6 +229,7 @@ def do_feed(linha):
         "desconto": (1 - preco / cheio) if cheio > preco > 0 else 0.0,
         "descricao": (linha.get("description") or "")[:1500],
         "imagem2": linha.get("image_link_3") or "",
+        "imagens": imagens[:6],
         "vendas": int(num(linha.get("like"))),          # no feed: curtidas
         "nota": num(linha.get("item_rating")),
         "taxa": 0.0, "comissao": 0.0,
@@ -332,6 +351,7 @@ def escolher_promo(produtos, usados):
     minimo = CURTIDAS_MINIMAS if METRICA == "curtidas" else VENDAS_MINIMAS
     bons = [p for p in produtos
             if p["id"] not in usados and p["imagem"] and p["preco"] > 0
+            and (not PRECO_MAXIMO or p["preco"] <= PRECO_MAXIMO)
             and DESCONTO_MINIMO <= p.get("desconto", 0) <= DESCONTO_MAXIMO
             and p["nota"] >= NOTA_MINIMA and p["vendas"] >= minimo]
     if not bons:
@@ -509,8 +529,18 @@ def _modelos_gemini(chave):
     return _MODELOS_GEMINI
 
 
-def chamar_ia(mensagens):
-    """Manda o pedido pro Gemini e devolve o texto da resposta ("" se não deu; o motivo fica em IA_INFO)."""
+def _jpeg_b64(img, lado=768):
+    import base64
+    f = img.convert("RGB")
+    f.thumbnail((lado, lado))
+    buf = io.BytesIO()
+    f.save(buf, "JPEG", quality=85)
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+def chamar_ia(mensagens, imagens=None):
+    """Manda o pedido pro Gemini e devolve o texto da resposta ("" se não deu; o motivo fica em IA_INFO).
+    imagens: fotos (PIL) que vão junto com a última mensagem, pra IA olhar."""
     chave = os.environ.get("GEMINI_API_KEY", "").strip()
     if MODO_TESTE or not USAR_IA:
         IA_INFO["erro"] = "modo teste (a IA não é chamada)" if MODO_TESTE else "a IA está desligada (USAR_IA = False)"
@@ -525,6 +555,9 @@ def chamar_ia(mensagens):
                                   "responseMimeType": "application/json"}}
     if sistema:
         corpo["systemInstruction"] = {"parts": [{"text": sistema}]}
+    if imagens and corpo["contents"]:
+        corpo["contents"][-1]["parts"] += [{"inline_data": {"mime_type": "image/jpeg", "data": _jpeg_b64(im)}}
+                                           for im in imagens]
     for modelo in _modelos_gemini(chave):
         for _ in range(2):
             try:
@@ -677,7 +710,7 @@ def roteiro_promo(p, ia, rnd):
     return cenas
 
 
-def legenda_promo(p, ia, palavra):
+def legenda_promo(p, ia, palavra, ia_video=False):
     pct = round(p["desconto"] * 100)
     tag = re.sub(r"[^A-Za-z0-9]", "", sem_acento(palavra).title())
     linhas = [f"#publi | {nome_promo(p, ia, palavra)}: de {reais(p['preco_cheio'])} por "
@@ -687,8 +720,10 @@ def legenda_promo(p, ia, palavra):
     if ia.get("beneficios"):
         linhas.append("")
     linhas += ["🔗 Link na bio",
-               f"📩 No Instagram: comenta {PALAVRA_DM} que eu te mando no direct", "",
-               f"Preço visto em {dt.date.today():%d/%m}, pode mudar.",
+               f"📩 No Instagram: comenta {PALAVRA_DM} que eu te mando no direct", ""]
+    if ia_video:
+        linhas.append("🤖 Cena do começo gerada por IA; o produto é o do anúncio.")
+    linhas += [f"Preço visto em {dt.date.today():%d/%m}, pode mudar.",
                f"#achadinhos #shopee #{tag} (link de afiliado)"]
     return "\n".join(linhas)
 
@@ -1695,7 +1730,7 @@ def fazer_conversa(produtos, palavra, hist, pasta_dia, rnd, usar_feed, sub):
 # Cada quadro é desenhado aqui no Python e vai direto pro ffmpeg.
 # ------------------------------------------------------------
 TV_TEXTO_Y = 300            # topo dos textos de cima (pergunta, nome, preço, usos, nota, chamada)
-TV_LUPI_ALTURA = 520        # o Lupi fica embaixo à esquerda (o lado direito tem os botões do app)
+TV_LUPI_ALTURA = 440        # o Lupi fica embaixo à esquerda (o lado direito tem os botões do app)
 TV_LUPI_PE = 1600           # onde ficam os pés do Lupi
 TV_LEGENDA = (690, 1425)    # centro da legenda, ao lado do Lupi
 TV_LEGENDA_LARG = 520
@@ -2039,12 +2074,12 @@ def _blocos(palavras):
     return blocos
 
 
-def _legenda_tv(palavras, bloco, ativo):
+def _legenda_tv(palavras, bloco, ativo, largura=None):
     fnt = forte(66)
     d0 = ImageDraw.Draw(Image.new("RGB", (8, 8)))
     linhas, atual = [], []
     for i in bloco:
-        if atual and d0.textlength(" ".join(palavras[j] for j in atual + [i]), font=fnt) > TV_LEGENDA_LARG - 50:
+        if atual and d0.textlength(" ".join(palavras[j] for j in atual + [i]), font=fnt) > (largura or TV_LEGENDA_LARG) - 50:
             linhas.append(atual)
             atual = []
         atual.append(i)
@@ -2066,7 +2101,54 @@ def _legenda_tv(palavras, bloco, ativo):
     return img
 
 
-def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd):
+class LeitorClipe:
+    """Lê o clipe do Flow quadro a quadro, já no tamanho da tela (1080x1920), sem o som.
+    Clipe deitado (16:9) fica inteiro no meio, com ele mesmo desfocado atrás."""
+
+    def __init__(self, caminho, fps=30):
+        self.dur = duracao(caminho) or 8.0
+        info = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                               "stream=width,height", "-of", "csv=p=0", str(caminho)],
+                              capture_output=True, text=True).stdout.strip().split(",")
+        try:
+            deitado = int(info[0]) > int(info[1])
+        except (ValueError, IndexError):
+            deitado = False
+        if deitado:
+            filtro = (f"split[a][b];[a]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
+                      f"boxblur=30[f];[b]scale={W}:-2[p];[f][p]overlay=(W-w)/2:(H-h)/2,fps={fps},setsar=1")
+        else:
+            filtro = f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},fps={fps},setsar=1"
+        self.proc = subprocess.Popen(["ffmpeg", "-v", "error", "-i", str(caminho), "-an", "-vf", filtro,
+                                      "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], stdout=subprocess.PIPE)
+        self.lidos, self.atual = 0, Image.new("RGB", (W, H))
+
+    def quadro(self, i):
+        """Quadro número i (só anda pra frente; se pedir o mesmo de novo, repete)."""
+        while self.lidos <= i:
+            buf = self.proc.stdout.read(W * H * 3)
+            if len(buf) < W * H * 3:
+                break
+            self.atual = Image.frombytes("RGB", (W, H), buf)
+            self.lidos += 1
+        return self.atual.copy()
+
+    def fechar(self):
+        try:
+            self.proc.kill()
+        except Exception:
+            pass
+
+
+def _etiqueta_ia():
+    img = Image.new("RGBA", (W, 70), (0, 0, 0, 0))
+    pilula(img, "cena gerada por IA", 190, 35, media(30), (0, 0, 0, 150), (235, 230, 245), px=18, py=8)
+    return img
+
+
+def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd, clipe=None):
+    """clipe: vídeo do Flow (o produto sendo usado). Quando tem, ele toca no começo com o preço em cima
+    desde o primeiro quadro; depois o vídeo segue com as fotos e o Lupi, como antes."""
     fps = 30
     pct = round(p["desconto"] * 100)
 
@@ -2111,6 +2193,15 @@ def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd):
     for a, b in zip(secoes, secoes[1:]):
         a["fim"] = b["ini"]
     secoes[-1]["fim"] = total
+
+    # clipe do Flow: toca do começo até o fim da parte do preço (no máximo 25% mais devagar)
+    leitor, fim_clipe, ritmo_clipe = None, 0.0, 1.0
+    if clipe:
+        leitor = LeitorClipe(clipe, fps)
+        fim_preco = next((s["fim"] for s in secoes if s["secao"] == "preco"), leitor.dur)
+        fim_clipe = min(total, leitor.dur * 1.25, max(leitor.dur, fim_preco))
+        ritmo_clipe = leitor.dur / fim_clipe if fim_clipe else 1.0
+        preco_clipe, etiqueta_ia = _cartao_preco(p, pct), _etiqueta_ia()
 
     # cenários: foto 1, foto 2 e as versões em fundo colorido, intercalados (cada corte muda o visual)
     c1 = _cenarios(f1, rnd)
@@ -2173,8 +2264,10 @@ def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd):
             img = _cartao_cta()
             cam.append((img, W / 2, TV_TEXTO_Y + img.height / 2, s["ini"] + 0.05))
         camadas_secao[si] = cam
-        if si > 0:
+        if si > 0 and s["ini"] >= fim_clipe:
             sons.append((s["ini"] - 0.1, "whoosh", 0.3))
+    if leitor:
+        sons.append((fim_clipe - 0.1, "whoosh", 0.35))       # passagem do clipe pras fotos
     topo_img = Image.new("RGBA", (W, 120), (0, 0, 0, 0))
     pilula(topo_img, "link no perfil  ↗", W / 2, 60, media(40), (0, 0, 0, 150), "white", px=30, py=14)
 
@@ -2223,18 +2316,28 @@ def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd):
 
     for q in range(n_quadros):
         tt = q / fps
-        pl = next((x for x in planos if x["ini"] <= tt < x["fim"]), planos[-1])
-        u = min(1.0, (tt - pl["ini"]) / max(0.05, pl["fim"] - pl["ini"]))
-        fundo, cy = canvases[pl["foto"]]
-        z, cx, cy2 = _camera(pl["mov"], u, cy)
-        z *= 1 + 0.05 * max(0.0, 1 - (tt - pl["ini"]) * fps / 5)       # pulinho a cada corte
-        quadro = _enquadrar(fundo, z, cx, cy2)
+        no_clipe = leitor is not None and tt < fim_clipe
+        if no_clipe:
+            quadro = leitor.quadro(int(tt * ritmo_clipe * fps))
+        else:
+            pl = next((x for x in planos if x["ini"] <= tt < x["fim"]), planos[-1])
+            u = min(1.0, (tt - pl["ini"]) / max(0.05, pl["fim"] - pl["ini"]))
+            fundo, cy = canvases[pl["foto"]]
+            z, cx, cy2 = _camera(pl["mov"], u, cy)
+            z *= 1 + 0.05 * max(0.0, 1 - (tt - pl["ini"]) * fps / 5)       # pulinho a cada corte
+            quadro = _enquadrar(fundo, z, cx, cy2)
 
         si = next((i for i, s in enumerate(secoes) if s["ini"] <= tt < s["fim"]), len(secoes) - 1)
         s = secoes[si]
-        if s["secao"] not in ("gancho", "cta"):
+        if no_clipe:
+            # o produto em uso + o preço desde o 1º quadro (é o que segura a pessoa) + aviso de IA
+            quadro.paste(preco_clipe, (0, TV_TEXTO_Y - 30), preco_clipe)
+            quadro.paste(etiqueta_ia, (0, 200), etiqueta_ia)
+        elif s["secao"] not in ("gancho", "cta"):
             quadro.paste(topo_img, (0, 262 - 60), topo_img)
-        if s["secao"] == "gancho":
+        if no_clipe:
+            pass
+        elif s["secao"] == "gancho":
             ln = s["linhas"][0]
             ativo = -1
             if ln["ini"] - 0.05 <= tt <= ln["fim"]:
@@ -2244,9 +2347,9 @@ def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd):
                 cache[chave] = _cartao_pergunta(ln["palavras"], ativo)
             img = cache[chave]
             _colar(quadro, img, W / 2, TV_TEXTO_Y - 30 + img.height / 2, int((tt - 0.0) * fps))
-        for img, x, y, quando in camadas_secao[si]:
+        for img, x, y, quando in ([] if no_clipe else camadas_secao[si]):
             if tt >= quando:
-                _colar(quadro, img, x, y, int((tt - quando) * fps))
+                _colar(quadro, img, x, y, int((tt - max(quando, fim_clipe)) * fps))
 
         # fala de agora (pra boca do Lupi e a legenda)
         atual = next((ln for ln in linhas if ln["ini"] - 0.05 <= tt <= ln["fim"] + 0.12), None)
@@ -2259,24 +2362,68 @@ def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd):
         olhos = "fechados" if ((q + 50) % 96) in (0, 1, 2, 3) else "abertos"   # 1º quadro (capa) de olho aberto
         pose = "aponta" if s["secao"] == "cta" else "normal"
         pulo = abs(math.sin(tt * 7)) * 10 if falando else 3 * math.sin(tt * 2)
-        sp = lupi(boca, olhos, pose)
-        quadro.paste(sp, (-20, int(TV_LUPI_PE - sp.height - pulo)), sp)
+        if not no_clipe:          # no clipe o produto é o destaque: o Lupi só entra depois
+            sp = lupi(boca, olhos, pose)
+            quadro.paste(sp, (-20, int(TV_LUPI_PE - sp.height - pulo)), sp)
 
-        if falando and atual["legenda"]:
+        # legenda: ao lado do Lupi; durante o clipe, no meio e pra todo mundo que fala
+        if atual is not None and atual["legenda"] and (falando or no_clipe):
             k_ativo = max([k for k, (a, b) in enumerate(atual["tempos"]) if tt >= a] or [0])
             bi = next(i for i, b in enumerate(atual["blocos"]) if k_ativo in b)
-            chave = (id(atual), bi, k_ativo)
+            chave = (id(atual), bi, k_ativo, no_clipe)
             if chave not in cache:
                 if len(cache) > 40:
                     cache.clear()
-                cache[chave] = _legenda_tv(atual["legenda"], atual["blocos"][bi], k_ativo)
+                cache[chave] = _legenda_tv(atual["legenda"], atual["blocos"][bi], k_ativo,
+                                           largura=860 if no_clipe else None)
             inicio_bloco = atual["tempos"][atual["blocos"][bi][0]][0]
             img = cache[chave]
-            _colar(quadro, img, TV_LEGENDA[0], TV_LEGENDA[1], max(0, int((tt - inicio_bloco) * fps)))
+            lx, ly = (W / 2, LEGENDA_Y + 40) if no_clipe else TV_LEGENDA
+            _colar(quadro, img, lx, ly, max(0, int((tt - inicio_bloco) * fps)))
         proc.stdin.write(quadro.tobytes())
     proc.stdin.close()
+    if leitor:
+        leitor.fechar()
     if proc.wait() != 0:
         raise RuntimeError("ffmpeg falhou ao montar o vídeo tela verde")
+
+
+def _slug(palavra):
+    return re.sub(r"[^a-z0-9]+", "-", sem_acento(palavra).lower()).strip("-")
+
+
+def produzir_video(item, pasta_dia, rnd, clipe=None):
+    """Monta o vídeo de um produto já escolhido. item: produto, ia, link, palavra, titulo, fotos_ref.
+    clipe: vídeo do Flow (opcional) pro começo."""
+    p, ia, link, palavra, nome = item["produto"], item["ia"], item["link"], item["palavra"], item["titulo"]
+    pct = round(p["desconto"] * 100)
+    slug = _slug(palavra)
+    pasta = pasta_dia / slug
+    pasta.mkdir(parents=True, exist_ok=True)
+    fotos = []
+    for k, url in enumerate((item.get("fotos_ref") or [p["imagem"]])[:2]):
+        try:
+            fotos.append(baixar_foto(url, pasta / f"foto{k + 1}.jpg"))
+        except Exception as e:
+            print(f"  (não baixei a foto {k + 1}: {e})")
+    if not fotos:
+        fotos = [baixar_foto(p["imagem"], pasta / "foto1.jpg")]
+    f1, f2 = fotos[0], fotos[-1]
+    if not item.get("ficha") and f2 is not f1 and _foto_limpa(f2) > _foto_limpa(f1) + 0.15:
+        f1, f2 = f2, f1          # a foto mais limpa vira a principal (preço, chamada e capa)
+    falas = roteiro_tela_verde(p, ia, palavra, rnd)
+    video = pasta_dia / f"{slug}.mp4"
+    montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, video, rnd, clipe=clipe)
+    dialogo = "\n".join(f"{'Lupi' if x['quem'] == 'lupi' else 'Amiga'}: {x['fala']}" for x in falas)
+    resumo = (f"🎬 {nome} — pronto pra postar" + (" (com o clipe do Flow)" if clipe else "") + "\n"
+              f"De {reais(p['preco_cheio'])} por {reais(p['preco'])} (-{pct}%)\n"
+              + aviso_link(link, bool(FEED_URLS)) + f"\n{dialogo}")
+    return {"titulo": nome, "video": video, "resumo": resumo,
+            "legenda": legenda_promo(p, ia, palavra, ia_video=bool(clipe)), "ia": bool(ia),
+            "canal": canal_promo(p, ia, palavra, link),
+            "whatsapp": whatsapp_promo(p, ia, palavra, link),
+            "foto_canal": p["imagem"], "ids": [p["id"]],
+            "registro": oferta_registro_promo(p, ia, palavra, link)}
 
 
 def fazer_tela_verde(produtos, palavra, hist, pasta_dia, rnd, usar_feed, sub):
@@ -2286,33 +2433,433 @@ def fazer_tela_verde(produtos, palavra, hist, pasta_dia, rnd, usar_feed, sub):
     link = obter_link(p, usar_feed, sub)
     ia = roteiro_ia(p)
     print(f"  produto: {p['nome'][:70]} | IA: {'sim' if ia else 'não (texto padrão)'}")
-    nome = nome_promo(p, ia, palavra)
-    pct = round(p["desconto"] * 100)
-    slug = re.sub(r"[^a-z0-9]+", "-", sem_acento(palavra).lower()).strip("-")
-    pasta = pasta_dia / slug
-    pasta.mkdir(exist_ok=True)
-    f1 = baixar_foto(p["imagem"], pasta / "foto1.jpg")
-    f2 = f1
-    if p.get("imagem2"):
+    item = {"produto": p, "ia": ia, "link": link, "palavra": palavra, "titulo": nome_promo(p, ia, palavra),
+            "fotos_ref": [p["imagem"]] + ([p["imagem2"]] if p.get("imagem2") else [])}
+    return produzir_video(item, pasta_dia, rnd)
+
+
+# ------------------------------------------------------------
+# Google Flow: de manhã o robô manda no Telegram as fotos e o texto pronto de cada produto;
+# você gera o clipe no Flow e manda de volta. Nos horários de postagem o robô pega o clipe,
+# confere se o produto saiu igual às fotos e monta o vídeo com ele.
+# ------------------------------------------------------------
+IA_FLOW_SISTEMA = (
+    "Você prepara pedidos para uma IA que gera vídeos curtos (Google Flow) de anúncios de produtos. "
+    "Você recebe o título, a descrição e as fotos reais do produto. O vídeo vai mostrar uma pessoa usando "
+    "o produto, e o produto precisa sair IGUAL ao das fotos. Regras: descreva só o que dá pra ver nas fotos; "
+    "a cena tem que mostrar com clareza, em close, as partes que definem o produto; prefira uma ação simples "
+    "e contínua com as mãos; o rosto da pessoa nunca aparece; nada de texto na tela; nada perigoso, sensual "
+    "ou com crianças. Responda apenas com um objeto JSON."
+)
+FICHA_PADRAO = {
+    "tipo": "", "detalhes": ["same shape, colors and details as the reference photos"], "detalhes_pt": [],
+    "cenario": "in a bright, cozy home",
+    "acao": "A person's hands pick up this exact product and show it being used, turning it slowly so every side is visible",
+    "enquadramento": "Close-up on the hands, face not visible", "fotos": [],
+}
+
+
+def _ponto(t):
+    t = (t or "").strip()
+    return t if t.endswith((".", "!", "?")) else t + "."
+
+
+def _validar_ficha(d, n_fotos):
+    if not isinstance(d, dict):
+        return {}
+
+    def lista(chave, limite):
+        v = d.get(chave) if isinstance(d.get(chave), list) else []
+        return [x for x in (limpar_texto(i, limite) for i in v if isinstance(i, str)) if len(x) >= 4][:4]
+
+    out = {"tipo": limpar_texto(d.get("tipo"), 40), "detalhes": lista("detalhes", 170),
+           "detalhes_pt": lista("detalhes_pt", 70), "cenario": limpar_texto(d.get("cenario"), 90),
+           "acao": limpar_texto(d.get("acao"), 330), "enquadramento": limpar_texto(d.get("enquadramento"), 120)}
+    if not (out["detalhes"] and len(out["acao"]) >= 20 and len(out["cenario"]) >= 4):
+        return {}
+    if not re.match(r"(in|on|at|inside|outdoors)\b", out["cenario"], re.I):
+        out["cenario"] = "in " + out["cenario"]
+    if "face" not in out["enquadramento"].lower():
+        out["enquadramento"] = _ponto(out["enquadramento"] or "Close-up on the hands") + " Face not visible"
+    fotos = []
+    for i in d.get("fotos") if isinstance(d.get("fotos"), list) else []:
         try:
-            f2 = baixar_foto(p["imagem2"], pasta / "foto2.jpg")
-        except Exception:
-            f2 = f1
-    if f2 is not f1 and _foto_limpa(f2) > _foto_limpa(f1) + 0.15:
-        f1, f2 = f2, f1          # a foto mais limpa vira a principal (preço, chamada e capa)
-    falas = roteiro_tela_verde(p, ia, palavra, rnd)
-    video = pasta_dia / f"{slug}.mp4"
-    montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, video, rnd)
-    dialogo = "\n".join(f"{'Lupi' if x['quem'] == 'lupi' else 'Amiga'}: {x['fala']}" for x in falas)
-    resumo = (f"🎬 {nome} — pronto pra postar\n"
-              f"De {reais(p['preco_cheio'])} por {reais(p['preco'])} (-{pct}%)\n"
-              + aviso_link(link, usar_feed) + f"\n{dialogo}")
-    return {"titulo": nome, "video": video, "resumo": resumo,
-            "legenda": legenda_promo(p, ia, palavra), "ia": bool(ia),
-            "canal": canal_promo(p, ia, palavra, link),
-            "whatsapp": whatsapp_promo(p, ia, palavra, link),
-            "foto_canal": p["imagem"], "ids": [p["id"]],
-            "registro": oferta_registro_promo(p, ia, palavra, link)}
+            i = int(i)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= i < n_fotos and i not in fotos:
+            fotos.append(i)
+    out["fotos"] = fotos[:2]
+    return out
+
+
+def ficha_flow(p, fotos):
+    """A IA olha as fotos e diz o que não pode mudar no produto e qual cena mostra isso."""
+    pedido = (
+        f"Produto: {p['nome']}\nDescrição do vendedor (pode estar bagunçada): {p.get('descricao', '')[:800]}\n"
+        f"São {len(fotos)} fotos, numeradas de 0 a {len(fotos) - 1}, na ordem em que vieram.\n\n"
+        "Devolva JSON com estas chaves:\n"
+        '"tipo": nome simples do produto em português, até 4 palavras;\n'
+        '"detalhes": lista em inglês com 2 a 4 detalhes visuais que definem este produto e que o vídeo não pode '
+        'mudar (formato, peças características, cores, visor etc.), ex.: "each earbud has a large curved ear hook '
+        'that wraps over the top of the ear";\n'
+        '"detalhes_pt": a mesma lista em português, bem curta (ex.: "gancho curvo atrás da orelha");\n'
+        '"cenario": em inglês, onde a cena acontece, começando com "in" ou "on" (ex.: "in a park at sunrise");\n'
+        '"acao": em inglês, uma ação simples e contínua de 8 segundos com as mãos de uma pessoa usando o produto, '
+        'que mostre os detalhes acima em close; escreva "this exact" antes do nome do produto; até 45 palavras;\n'
+        '"enquadramento": em inglês, como a câmera mostra a cena, sempre com o rosto fora da imagem '
+        '(ex.: "Close-up on the hands, face not visible.");\n'
+        '"fotos": lista com os números das 2 fotos que mostram melhor o produto de verdade, de preferência '
+        "sem texto, montagem ou marca d'água, a melhor primeiro."
+    )
+    texto = chamar_ia([{"role": "system", "content": IA_FLOW_SISTEMA},
+                       {"role": "user", "content": pedido}], imagens=fotos)
+    m = re.search(r"\{.*\}", texto or "", re.S)
+    try:
+        return _validar_ficha(json.loads(m.group(0)), len(fotos)) if m else {}
+    except Exception:
+        return {}
+
+
+def pedido_flow(ficha):
+    """Texto pronto pra colar no Flow (o mesmo formato que funcionou no teste do fone)."""
+    det = "; ".join(ficha["detalhes"])
+    prompt = (f"Vertical smartphone video {ficha['cenario']}. {_ponto(ficha['acao'])} "
+              f"Key product details that must match the reference: {det}, and they must be clearly visible "
+              f"in close-up. {_ponto(ficha['enquadramento'])} Natural light, slight handheld movement, realistic. "
+              "No on-screen text or captions.")
+    return (f"Gere 1 vídeo com o {MODELO_FLOW} (não use outro modelo), vertical 9:16, 8 segundos, "
+            f"usando as fotos anexadas como referência do produto. Prompt:\n\n{prompt}")
+
+
+def ler_fila():
+    try:
+        return json.loads(FILA.read_text())
+    except Exception:
+        return {}
+
+
+def salvar_fila(fila):
+    FILA.write_text(json.dumps(fila, ensure_ascii=False, indent=1))
+
+
+def _jpeg_bytes(img):
+    buf = io.BytesIO()
+    f = img.convert("RGB")
+    f.thumbnail((1600, 1600))
+    f.save(buf, "JPEG", quality=92)
+    return buf.getvalue()
+
+
+def enviar_kit(fila, item, fotos):
+    """Manda no Telegram as fotos de referência e o texto pronto pro Flow. Guarda o número das mensagens
+    (se você responder uma delas com o vídeo, o robô sabe de qual produto é)."""
+    e = html.escape
+    p, ficha = item["produto"], item["ficha"]
+    ids = []
+    if fotos:
+        arquivos = {f"f{k}": (f"foto{k + 1}.jpg", _jpeg_bytes(f), "image/jpeg") for k, f in enumerate(fotos)}
+        if len(fotos) > 1:
+            media = [{"type": "photo", "media": f"attach://f{k}"} for k in range(len(fotos))]
+            res = telegram("sendMediaGroup", {"chat_id": TG_CHAT, "media": json.dumps(media)}, arquivos)
+            ids += [m["message_id"] for m in res or []]
+        else:
+            res = telegram("sendPhoto", {"chat_id": TG_CHAT}, {"photo": arquivos["f0"]})
+            ids += [res["message_id"]] if res else []
+    n, total = item["numero"], len(fila["itens"])
+    hora = HORARIOS_POSTAGEM[n - 1] if n <= len(HORARIOS_POSTAGEM) else ""
+    confere = "; ".join(ficha.get("detalhes_pt") or [])
+    texto = (f"🎬 <b>Vídeo {n} de {total} · {e(item['titulo'])}</b>" + (f" (sai às {hora})" if hora else "")
+             + f"\nDe {reais(p['preco_cheio'])} por {reais(p['preco'])}\n\n"
+             "1. Salve as fotos acima.\n"
+             f"2. No Flow: anexe as fotos, cole o texto abaixo e aprove ({CREDITOS_FLOW} créditos).\n"
+             + (f"3. Antes de mandar, confira se aparece: <b>{e(confere)}</b>.\n" if confere
+                else "3. Antes de mandar, confira se o produto saiu igual ao das fotos.\n")
+             + "4. <b>Responda esta mensagem</b> com o vídeo (ou só mande os vídeos na ordem).\n\n"
+             f"<pre>{e(item['pedido'])}</pre>")
+    res = telegram("sendMessage", {"chat_id": TG_CHAT, "text": texto, "parse_mode": "HTML",
+                                   "disable_web_page_preview": "true"})
+    if res:
+        ids.append(res["message_id"])
+    item["msg_ids"] = ids
+
+
+def _baixar_fotos(urls, pasta, prefixo="ref"):
+    pasta.mkdir(parents=True, exist_ok=True)
+    ok, fotos = [], []
+    for k, url in enumerate(urls[:5]):
+        try:
+            fotos.append(baixar_foto(url, pasta / f"{prefixo}{k}.jpg"))
+            ok.append(url)
+        except Exception as e:
+            print(f"  (não baixei a foto {k}: {e})")
+    return ok, fotos
+
+
+def rodar_kit():
+    hoje = dt.date.today()
+    fila = ler_fila()
+    pasta_dia = SAIDA / hoje.isoformat()
+    pasta_dia.mkdir(parents=True, exist_ok=True)
+
+    if fila.get("data") == hoje.isoformat() and fila.get("itens"):
+        print("O kit de hoje já existe: mandando de novo o que ainda espera clipe.")
+        for item in fila["itens"]:
+            if item["status"] == "aguardando" and not item.get("clipe"):
+                _, fotos = _baixar_fotos(item["fotos_ref"], pasta_dia / f"kit{item['numero']}")
+                enviar_kit(fila, item, fotos)
+        salvar_fila(fila)
+        return
+
+    usar_feed, palavras, produtos_de = preparar_busca()
+    hist = ler_historico()
+    itens = []
+    for palavra in palavras:
+        if len(itens) >= VIDEOS_POR_DIA:
+            break
+        print(f"> {palavra}")
+        try:
+            p = escolher_promo(produtos_de(palavra), hist)
+            if not p:
+                print("  nada bom pra essa palavra hoje")
+                continue
+            numero = len(itens) + 1
+            link = obter_link(p, usar_feed, ["robo", hoje.strftime("%Y%m%d"), str(numero)])
+            ia = roteiro_ia(p)
+            pasta = pasta_dia / f"kit{numero}"
+            pasta.mkdir(exist_ok=True)
+            urls, fotos = _baixar_fotos(p.get("imagens") or [p["imagem"]], pasta)
+            if not fotos:
+                continue
+            ficha = ficha_flow(p, fotos) if USAR_FLOW else {}
+            print(f"  produto: {p['nome'][:70]} | roteiro IA: {'sim' if ia else 'não'} | "
+                  f"ficha IA: {'sim' if ficha else 'não (texto padrão)'}")
+            ordem = ficha.get("fotos") or sorted(range(len(fotos)), key=lambda i: -_foto_limpa(fotos[i]))
+            ordem = ordem[:2]
+            ficha = ficha or dict(FICHA_PADRAO)
+            item = {"numero": numero, "palavra": palavra, "titulo": nome_promo(p, ia, palavra),
+                    "produto": p, "ia": ia, "link": link, "ficha": ficha, "pedido": pedido_flow(ficha),
+                    "fotos_ref": [urls[i] for i in ordem], "status": "aguardando", "clipe": None,
+                    "msg_ids": []}
+            item["_fotos"] = [fotos[i] for i in ordem]
+            itens.append(item)
+            hist[p["id"]] = hoje.isoformat()
+        except Exception as e:
+            print(f"  erro em '{palavra}': {e}")
+
+    fila = {"data": hoje.isoformat(), "metrica": METRICA, "kit_ts": int(time.time()),
+            "offset": fila.get("offset", 0), "itens": itens}
+    if not itens:
+        avisar("Robô: hoje não achei produto bom pro kit. Tente outras palavras em PALAVRAS "
+               "ou baixe DESCONTO_MINIMO / CURTIDAS_MINIMAS / aumente PRECO_MAXIMO.")
+    elif USAR_FLOW and (TG_CHAT or MODO_TESTE):
+        avisar(f"☀️ Kit de hoje ({hoje:%d/%m}): {len(itens)} vídeo(s). Gere os clipes juntos no Flow "
+               f"({len(itens) * CREDITOS_FLOW} créditos). Se não der tempo, sem problema: o robô posta com as fotos.")
+        for item in itens:
+            enviar_kit(fila, item, item["_fotos"])
+    for item in itens:
+        item.pop("_fotos", None)
+    salvar_fila(fila)
+    salvar_historico(hist)
+    print(f"Kit pronto: {len(itens)} produto(s).")
+
+
+def receber_clipes(fila):
+    """Pega no Telegram os vídeos que você mandou (só do seu chat) e liga cada um ao produto certo:
+    pela mensagem que você respondeu, pelo número na legenda ("1", "2") ou pela ordem."""
+    updates = []
+    if MODO_TESTE:      # CLIPE_TESTE="1=/caminho/clipe.mp4;2=/outro.mp4"
+        for k, parte in enumerate(x for x in os.environ.get("CLIPE_TESTE", "").split(";") if "=" in x):
+            n, caminho = parte.split("=", 1)
+            updates.append({"update_id": fila.get("offset", 0) + k, "message": {
+                "chat": {"id": TG_CHAT}, "date": int(time.time()), "caption": n.strip(),
+                "video": {"file_id": "local:" + caminho.strip(), "file_size": 1}}})
+    elif TG_TOKEN:
+        try:
+            r = requests.get(f"https://api.telegram.org/bot{TG_TOKEN}/getUpdates", timeout=60,
+                             params={"offset": fila.get("offset", 0), "timeout": 0,
+                                     "allowed_updates": json.dumps(["message"])})
+            updates = r.json().get("result", []) if r.ok else []
+            if not r.ok:
+                print(f"Telegram (getUpdates) erro: {r.text[:200]}")
+        except Exception as e:
+            print(f"Telegram (getUpdates) erro: {e}")
+    for u in updates:
+        fila["offset"] = max(fila.get("offset", 0), u.get("update_id", 0) + 1)
+        m = u.get("message") or {}
+        if str((m.get("chat") or {}).get("id")) != str(TG_CHAT):
+            continue                                   # só aceita vídeo do seu chat
+        if m.get("date", 0) < fila.get("kit_ts", 0) - 60:
+            continue                                   # vídeo de antes do kit de hoje
+        doc = m.get("document") or {}
+        # vídeo sem som o Telegram costuma transformar em "animação" (GIF): aceita também
+        arq = (m.get("video") or m.get("animation")
+               or (doc if str(doc.get("mime_type", "")).startswith("video/") else None))
+        if not arq:
+            continue
+        legenda = sem_acento((m.get("caption") or "").lower())
+        alvo = None
+        resp = (m.get("reply_to_message") or {}).get("message_id")
+        if resp:
+            alvo = next((it for it in fila["itens"] if resp in it.get("msg_ids", [])), None)
+        num = re.search(r"\b(\d)\b", legenda)
+        if alvo is None and num:
+            alvo = next((it for it in fila["itens"] if it["numero"] == int(num.group(1))), None)
+        if alvo is None:
+            alvo = next((it for it in fila["itens"] if it["status"] == "aguardando" and not it.get("clipe")), None)
+        if alvo is None:
+            avisar("Recebi um vídeo, mas nenhum produto de hoje está esperando clipe.")
+            continue
+        if alvo["status"] != "aguardando":
+            avisar(f"Recebi um clipe pro vídeo {alvo['numero']}, mas ele já foi postado.")
+            continue
+        alvo["clipe"] = {"file_id": arq["file_id"], "tamanho": arq.get("file_size", 0),
+                         "forcar": "forcar" in legenda, "conferido": None, "motivo": ""}
+        print(f"  clipe recebido pro vídeo {alvo['numero']}")
+
+
+def baixar_clipe(clipe, destino):
+    fid = clipe["file_id"]
+    if fid.startswith("local:"):
+        import shutil
+        shutil.copy(fid[len("local:"):], destino)
+        return
+    if clipe.get("tamanho", 0) > 20_000_000:
+        raise RuntimeError("o vídeo passou de 20 MB, o limite do Telegram pra robôs "
+                           "(mande como vídeo, não como arquivo)")
+    info = requests.get(f"https://api.telegram.org/bot{TG_TOKEN}/getFile",
+                        params={"file_id": fid}, timeout=60).json()
+    if not info.get("ok"):
+        raise RuntimeError(info.get("description", "o Telegram não entregou o arquivo"))
+    r = requests.get(f"https://api.telegram.org/file/bot{TG_TOKEN}/{info['result']['file_path']}", timeout=180)
+    r.raise_for_status()
+    destino.write_bytes(r.content)
+
+
+def quadros_do_clipe(caminho, fracoes=(0.2, 0.5, 0.85)):
+    dur = duracao(caminho)
+    quadros = []
+    for fr in fracoes:
+        png = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{dur * fr:.2f}", "-i", str(caminho),
+                              "-frames:v", "1", "-f", "image2pipe", "-vcodec", "png", "-"],
+                             capture_output=True).stdout
+        if png:
+            quadros.append(Image.open(io.BytesIO(png)).convert("RGB"))
+    return quadros
+
+
+def conferir_produto(caminho, item, pasta):
+    """A IA compara os quadros do clipe com as fotos reais. Devolve (aprovado, motivo).
+    Se a IA não responder, aprova (você já conferiu antes de mandar)."""
+    if MODO_TESTE or not USAR_IA:
+        return True, "conferência da IA pulada (modo teste)"
+    _, refs = _baixar_fotos(item["fotos_ref"], pasta, f"conf{item['numero']}_")
+    quadros = quadros_do_clipe(caminho)
+    if not refs or not quadros:
+        return True, "não deu pra comparar com as fotos"
+    detalhes = item["ficha"].get("detalhes_pt") or item["ficha"].get("detalhes") or []
+    pedido = (f"As {len(refs)} primeiras imagens são fotos reais do produto \"{item['titulo']}\". "
+              f"As {len(quadros)} seguintes são quadros de um vídeo gerado por IA.\n"
+              f"Detalhes que não podem mudar: {'; '.join(detalhes) or 'formato, cores e peças do produto'}.\n\n"
+              "O produto do vídeo é o mesmo das fotos? Reprove só se ele estiver claramente diferente: outro "
+              "formato, faltando uma peça característica ou de outra cor. Ignore cenário, pessoa, luz, ângulo e "
+              "letras ou logos pequenos.\n"
+              'Devolva JSON: {"aprovado": true ou false, "motivo": "frase curta em português"}')
+    texto = chamar_ia([{"role": "system", "content": "Você confere se um vídeo gerado por IA mostra o mesmo "
+                                                     "produto das fotos reais de um anúncio. Responda apenas "
+                                                     "com um objeto JSON."},
+                       {"role": "user", "content": pedido}], imagens=refs + quadros)
+    m = re.search(r"\{.*\}", texto or "", re.S)
+    try:
+        d = json.loads(m.group(0))
+    except Exception:
+        return True, "a IA não respondeu, então não deu pra conferir"
+    ok = d.get("aprovado") is True or str(d.get("aprovado")).lower() == "true"
+    motivo = limpar_texto(d.get("motivo"), 160) or ("o produto saiu igual às fotos" if ok
+                                                    else "o produto saiu diferente das fotos")
+    return ok, motivo
+
+
+def conferir_clipes(fila, pasta_dia):
+    """Baixa os clipes que chegaram e confere cada um (só uma vez). Devolve {número: arquivo} dos aprovados."""
+    prontos = {}
+    for it in fila["itens"]:
+        c = it.get("clipe")
+        if not c or it["status"] != "aguardando":
+            continue
+        n = it["numero"]
+        destino = pasta_dia / f"clipe{n}.mp4"
+        try:
+            baixar_clipe(c, destino)
+        except Exception as e:
+            if c.get("conferido") is None:
+                avisar(f"❌ Não consegui baixar o clipe do vídeo {n} ({e}). Ele vai sair com as fotos.")
+            c["conferido"], c["motivo"] = False, f"não consegui baixar o clipe ({e})"
+            continue
+        if c.get("conferido") is None:
+            ok, motivo = conferir_produto(destino, it, pasta_dia)
+            if not ok and c.get("forcar"):
+                ok, motivo = True, f"a IA achou diferente ({motivo}), mas você pediu pra usar"
+            c["conferido"], c["motivo"] = ok, motivo
+            if ok:
+                avisar(f"✅ Clipe do vídeo {n} ({it['titulo']}) conferido: {motivo}.")
+            else:
+                avisar(f"❌ O clipe do vídeo {n} ({it['titulo']}) não passou: {motivo}. Ele vai sair com as "
+                       "fotos. Se você achar que o produto está certo, responda o kit com o mesmo vídeo e a "
+                       "legenda \"forçar\" antes do horário dele.")
+        if c["conferido"]:
+            prontos[n] = destino
+    return prontos
+
+
+def rodar_postar():
+    """Monta e entrega o próximo vídeo do dia (primeiro o que já tem clipe aprovado)."""
+    global METRICA
+    hoje = dt.date.today()
+    fila = ler_fila()
+    if fila.get("data") != hoje.isoformat() or not fila.get("itens"):
+        print("Não tem kit de hoje: fazendo 1 vídeo do jeito antigo.")
+        return rodar_completo(maximo=1)
+    METRICA = fila.get("metrica", METRICA)
+    pasta_dia = SAIDA / hoje.isoformat()
+    pasta_dia.mkdir(parents=True, exist_ok=True)
+    receber_clipes(fila)
+    prontos = conferir_clipes(fila, pasta_dia) if USAR_FLOW else {}
+    salvar_fila(fila)                     # guarda os clipes recebidos mesmo se a montagem falhar
+    pendentes = [it for it in fila["itens"] if it["status"] == "aguardando"]
+    if not pendentes:
+        print("Os vídeos de hoje já saíram.")
+        return
+    item = next((it for it in pendentes if it["numero"] in prontos), pendentes[0])
+    clipe = prontos.get(item["numero"])
+    rnd = random.Random(hoje.toordinal() * 10 + item["numero"])
+    print(f"> vídeo {item['numero']}: {item['titulo']} ({'com clipe do Flow' if clipe else 'só com fotos'})")
+    try:
+        r = produzir_video(item, pasta_dia, rnd, clipe)
+    except Exception as e:
+        if not clipe:
+            raise
+        print(f"  erro montando com o clipe ({e}); tentando só com as fotos")
+        clipe = None
+        r = produzir_video(item, pasta_dia, rnd)
+    entregar_telegram(r)
+    if USAR_FLOW and not clipe:
+        motivo = (item.get("clipe") or {}).get("motivo") or "o clipe do Flow não chegou a tempo"
+        avisar(f"(O vídeo {item['numero']} saiu só com as fotos: {motivo}.)")
+    item["status"], item["postado_em"] = "postado", dt.datetime.now().strftime("%H:%M")
+    ofertas = ler_ofertas()
+    ofertas.insert(0, r["registro"])
+    salvar_ofertas(ofertas)
+    publicar_pagina(ofertas)
+    texto = r["whatsapp"] + "\n\n_Link de afiliado · preço de hoje, pode mudar_"
+    if PAGINA_URL:
+        texto += f"\n\nTodas as ofertas: {PAGINA_URL}"
+    publicar_painel([{"palavra": r["titulo"], "video": r["video"], "legenda": r["legenda"],
+                      "ia": r.get("ia")}], texto)
+    avisar("Pro WhatsApp (copie tudo abaixo e cole no seu canal):")
+    avisar(texto)
+    salvar_fila(fila)
+    print(f"Pronto: vídeo {item['numero']} entregue.")
 
 
 def baixar_foto(url, destino):
@@ -2404,14 +2951,29 @@ def montar_video(cenas, falas, pasta, destino):
 # ------------------------------------------------------------
 # Telegram
 # ------------------------------------------------------------
+_TG_FALSO = [1000]     # números de mensagem de mentira no modo teste
+
+
 def telegram(metodo, dados, arquivos=None):
+    """Chama a API do Telegram e devolve o 'result' (ou None se deu erro)."""
     if MODO_TESTE or not TG_TOKEN:
         print(f"[telegram:{metodo}] {dados.get('caption') or dados.get('text', '')}"[:300])
-        return
-    r = requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/{metodo}",
-                      data=dados, files=arquivos, timeout=120)
+        _TG_FALSO[0] += 1
+        if metodo == "sendMediaGroup":
+            n = len(json.loads(dados.get("media", "[]")))
+            _TG_FALSO[0] += n
+            return [{"message_id": _TG_FALSO[0] - k} for k in range(n, 0, -1)]
+        return {"message_id": _TG_FALSO[0]}
+    try:
+        r = requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/{metodo}",
+                          data=dados, files=arquivos, timeout=120)
+    except Exception as e:
+        print(f"Telegram erro: {e}")
+        return None
     if not r.ok:
         print(f"Telegram erro: {r.text[:300]}")
+        return None
+    return r.json().get("result")
 
 
 def avisar(texto):
@@ -2502,8 +3064,12 @@ footer{max-width:560px;margin:0 auto;padding:0 16px 40px;color:var(--sub);font-s
 def gerar_pagina(ofertas):
     e = html.escape
     canal = TG_CANAL.lstrip("@")
-    cartoes = []
+    cartoes, vistos = [], set()
     for o in ofertas[:OFERTAS_NA_PAGINA]:
+        chave = (o.get("produto") or o.get("barato") or {}).get("nome", "")
+        if chave in vistos:          # o mesmo produto não aparece duas vezes
+            continue
+        vistos.add(chave)
         if o.get("tipo") == "promo":
             cartoes.append(cartao_promo(o))
             continue
@@ -2659,7 +3225,7 @@ def produtos_teste(palavra):
             "nota": round(rnd.uniform(4.3, 5.0), 1),
             "taxa": 0.08, "comissao": 0, "loja": "Loja Teste",
             "descricao": "Produto de teste. Fácil de limpar, compacto e com ótimo acabamento.",
-            "imagem2": "",
+            "imagem2": "", "imagens": [f"{palavra}-{i}", f"{palavra}-{i}-b"], "nacional": True,
         })
         lista[-1]["preco_cheio"] = round(lista[-1]["preco"] * rnd.uniform(1.1, 2.2), 2)
         lista[-1]["desconto"] = 1 - lista[-1]["preco"] / lista[-1]["preco_cheio"]
@@ -2682,9 +3248,18 @@ def ordem_de_hoje():
     return PALAVRAS[inicio:] + PALAVRAS[:inicio]
 
 
+def com_afiliado(link, sub):
+    """O link 'an_redir' do feed só conta a venda pra você se levar o seu affiliate_id.
+    O sub_id diz no painel da Shopee de qual vídeo veio o clique."""
+    if not AFILIADO_ID or "an_redir" not in link or "affiliate_id=" in link:
+        return link
+    extra = urllib.parse.urlencode({"affiliate_id": AFILIADO_ID, "sub_id": "-".join(sub)})
+    return link + ("&" if "?" in link else "?") + extra
+
+
 def obter_link(p, usar_feed, sub):
     if MODO_TESTE or usar_feed:
-        return p["oferta"]
+        return com_afiliado(p["oferta"], sub)
     try:
         return link_curto(p["url"], sub)
     except Exception as e:
@@ -2693,6 +3268,9 @@ def obter_link(p, usar_feed, sub):
 
 
 def aviso_link(link, usar_feed):
+    if usar_feed and "an_redir" in link and "affiliate_id=" not in link:
+        return ("Atenção: o link não tem o seu ID de afiliado, então a venda pode não contar pra você. "
+                "Crie o segredo SHOPEE_AFFILIATE_ID no GitHub.\n")
     if usar_feed and "an_redir" not in link and "affiliate" not in link:
         return "Atenção: o link não parece ser de afiliado. Me avise.\n"
     return ""
@@ -2806,7 +3384,8 @@ def entregar_telegram(r):
                                "caption": r["canal"], "parse_mode": "HTML"})
 
 
-def main():
+def preparar_busca():
+    """Lê o feed (ou prepara a API). Devolve (usar_feed, palavras de hoje, função palavra -> produtos)."""
     global METRICA
     usar_feed = bool(FEED_URLS)
     if usar_feed:
@@ -2826,6 +3405,33 @@ def main():
                    "Confira o segredo SHOPEE_FEED_URL.")
             sys.exit(1)
 
+    def produtos_de(palavra):
+        if usar_feed:
+            return filtrar_feed(achados.get(palavra, []), palavra)
+        if MODO_TESTE:
+            return produtos_teste(palavra)
+        vistos = {}
+        for ordem in (2, 1):          # mais vendidos + relevância
+            for p in buscar(palavra, ordem):
+                vistos[p["id"]] = p
+        return list(vistos.values())
+
+    return usar_feed, palavras, produtos_de
+
+
+def main():
+    if MODO == "kit":
+        rodar_kit()
+    elif MODO == "postar":
+        rodar_postar()
+    else:
+        rodar_completo()
+
+
+def rodar_completo(maximo=None):
+    """O jeito antigo: escolhe, monta e entrega todos os vídeos de uma vez (sem Flow)."""
+    usar_feed, palavras, produtos_de = preparar_busca()
+    maximo = maximo or VIDEOS_POR_DIA
     hoje = dt.date.today()
     rnd = random.Random(hoje.toordinal())
     pasta_dia = SAIDA / hoje.isoformat()
@@ -2839,21 +3445,11 @@ def main():
              "promo": fazer_promo}.get(FORMATO, fazer_comparativo)
 
     for palavra in palavras:
-        if feitos >= VIDEOS_POR_DIA:
+        if feitos >= maximo:
             break
         print(f"> {palavra}")
         try:
-            if usar_feed:
-                produtos = filtrar_feed(achados.get(palavra, []), palavra)
-            elif MODO_TESTE:
-                produtos = produtos_teste(palavra)
-            else:
-                vistos = {}
-                for ordem in (2, 1):          # mais vendidos + relevância
-                    for p in buscar(palavra, ordem):
-                        vistos[p["id"]] = p
-                produtos = list(vistos.values())
-
+            produtos = produtos_de(palavra)
             r = fazer(produtos, palavra, hist, pasta_dia, rnd, usar_feed, sub)
             if not r:
                 print("  nada bom pra essa palavra hoje")
