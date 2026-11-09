@@ -1,6 +1,28 @@
 [
  {
   "tipo": "promo",
+  "data": "2026-11-09",
+  "palavra": "caixa de som bluetooth",
+  "metrica": "curtidas",
+  "produto": {
+   "nome": "Caixa de Som Alto Falante Bluetooth 5W LED IDALI LIFE Portátil Som Potente",
+   "nome_curto": "Caixa de som LED",
+   "preco": 44.99,
+   "preco_cheio": 119.99,
+   "desconto": 0.6250520876739728,
+   "imagem": "https://cf.shopee.com.br/file/br-11134207-820l8-mpu01jgoo7i8dd",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F1175743084%2F58207536481",
+   "nota": 4.89,
+   "pop": 716,
+   "beneficios": [
+    "Potência de cinco watts",
+    "Iluminação LED dinâmica",
+    "Conexão Bluetooth rápida"
+   ]
+  }
+ },
+ {
+  "tipo": "promo",
   "data": "2026-11-08",
   "palavra": "aspirador portátil",
   "metrica": "curtidas",
