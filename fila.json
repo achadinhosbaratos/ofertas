@@ -2,7 +2,7 @@
  "data": "2026-11-09",
  "metrica": "curtidas",
  "kit_ts": 1794232168,
- "offset": 0,
+ "offset": 479550047,
  "itens": [
   {
    "numero": 1,
@@ -150,13 +150,20 @@
     "https://cf.shopee.com.br/file/br-11134207-7r98o-ll138p27835ra8",
     "https://cf.shopee.com.br/file/br-11134207-7r98o-majzn4rlerqxe8"
    ],
-   "status": "aguardando",
-   "clipe": null,
+   "status": "postado",
+   "clipe": {
+    "file_id": "BAACAgEAAxkBAAMGavH-88CS_AgyIjCtiN95kDi5sYQAAk8JAAI6c5FHLw8jKOSNYQc9BA",
+    "tamanho": 731164,
+    "forcar": false,
+    "conferido": true,
+    "motivo": "O produto no vídeo mantém o mesmo formato, cores e características das fotos reais."
+   },
    "msg_ids": [
     3,
     4,
     5
-   ]
+   ],
+   "postado_em": "14:22"
   }
  ]
 }

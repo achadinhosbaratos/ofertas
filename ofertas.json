@@ -2,6 +2,28 @@
  {
   "tipo": "promo",
   "data": "2026-11-09",
+  "palavra": "mop giratório",
+  "metrica": "curtidas",
+  "produto": {
+   "nome": "Mop Limpeza Rodo Mágico Giratório Esfregão Balde Flat Flash Original Powermaid",
+   "nome_curto": "Rodo Mop Giratório",
+   "preco": 49.9,
+   "preco_cheio": 69.9,
+   "desconto": 0.28612303290414887,
+   "imagem": "https://cf.shopee.com.br/file/br-11134207-7r98o-ll138p27835ra8",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F445163047%2F16368136848",
+   "nota": 4.55,
+   "pop": 15249,
+   "beneficios": [
+    "Substitui vassoura e pano",
+    "Refil lavável na máquina",
+    "Rodo giratório 360 graus"
+   ]
+  }
+ },
+ {
+  "tipo": "promo",
+  "data": "2026-11-09",
   "palavra": "caixa de som bluetooth",
   "metrica": "curtidas",
   "produto": {
