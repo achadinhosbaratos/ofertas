@@ -3,8 +3,11 @@ name: Robô de achadinhos
 on:
   schedule:
     - cron: "47 10 * * *"   # 07:47 (Brasília): kit do dia no Telegram (fotos + texto pro Flow)
+    - cron: "47 11 * * *"   # 08:47: reserva do kit (só age se o das 07:47 não chegou)
     - cron: "47 14 * * *"   # 11:47 (Brasília): monta e entrega o 1º vídeo
+    - cron: "47 15 * * *"   # 12:47: reserva (só posta se o das 11:47 não saiu)
     - cron: "47 22 * * *"   # 19:47 (Brasília): monta e entrega o 2º vídeo
+    - cron: "47 23 * * *"   # 20:47: reserva (só posta se o das 19:47 não saiu)
   workflow_dispatch:         # botão "Run workflow" pra rodar na hora
     inputs:
       modo:
@@ -63,23 +66,18 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_CANAL: ${{ secrets.TELEGRAM_CANAL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}   # IA do Google que escreve os roteiros
+          INSTAGRAM_TOKEN: ${{ secrets.INSTAGRAM_TOKEN }}  # chave do Instagram (sem ela, não posta lá)
+          ORIGEM: ${{ github.event_name }}                 # "schedule" = horário automático
         run: |
           MODO="${{ inputs.modo }}"
           if [ -z "$MODO" ]; then
-            if [ "${{ github.event.schedule }}" = "47 10 * * *" ]; then MODO=kit; else MODO=postar; fi
+            case "${{ github.event.schedule }}" in
+              "47 10 * * *"|"47 11 * * *") MODO=kit ;;
+              *) MODO=postar ;;
+            esac
           fi
           echo "Modo: $MODO"
           python bot.py "$MODO"
-
-      - name: Guardar histórico, ofertas e fila
-        if: always()
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add historico.json ofertas.json fila.json 2>/dev/null || true
-          git commit -m "robô $(date +%F) $(date +%H:%M)" || echo "nada novo"
-          git pull --rebase --autostash || true
-          git push || echo "não deu pra salvar"
 
       - name: Preparar a página
         if: always() && hashFiles('site/index.html') != ''
@@ -93,3 +91,37 @@ jobs:
         if: always() && hashFiles('site/index.html') != ''
         continue-on-error: true
         uses: actions/deploy-pages@v4
+
+      - name: Postar no Instagram
+        if: always()
+        env:
+          INSTAGRAM_TOKEN: ${{ secrets.INSTAGRAM_TOKEN }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ORIGEM: ${{ github.event_name }}
+          TEM_GH_PAT: ${{ secrets.GH_PAT_SEGREDOS != '' && 'sim' || '' }}
+        run: python bot.py instagram
+
+      - name: Salvar a chave renovada do Instagram
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_SEGREDOS }}   # token do GitHub com permissão de mudar segredos
+        run: |
+          f="$RUNNER_TEMP/instagram_token_novo.txt"
+          [ -s "$f" ] || exit 0
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::A chave do Instagram mudou na renovação, mas falta o segredo GH_PAT_SEGREDOS pra salvar."
+          else
+            gh secret set INSTAGRAM_TOKEN --repo "$GITHUB_REPOSITORY" < "$f" && echo "Chave do Instagram salva."
+          fi
+          rm -f "$f"
+
+      - name: Guardar histórico, ofertas, fila e redes
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add historico.json ofertas.json fila.json redes.json 2>/dev/null || true
+          git commit -m "robô $(date +%F) $(date +%H:%M)" || echo "nada novo"
+          git pull --rebase --autostash || true
+          git push || echo "não deu pra salvar"

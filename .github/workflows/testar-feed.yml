@@ -13,6 +13,7 @@ jobs:
           FEED: ${{ secrets.SHOPEE_FEED_URL }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          INSTAGRAM_TOKEN: ${{ secrets.INSTAGRAM_TOKEN }}
         run: |
           python3 - <<'FIM'
           import csv, io, json, os, re, zlib, urllib.request, urllib.parse, urllib.error
@@ -45,6 +46,25 @@ jobs:
                          f" | token com {len(TOKEN)} caracteres, formato {'certo' if formato_ok else 'ERRADO'}")
           chat_ok = re.fullmatch(r"-?\d+", CHAT) is not None
           rel.append(f"Chat ID: {'ok' if chat_ok else 'formato estranho'}")
+
+          # 1b) Instagram (só confere a chave; não posta nada)
+          IG = os.environ.get("INSTAGRAM_TOKEN", "").strip()
+          if not IG:
+              rel.append("Instagram: sem o segredo INSTAGRAM_TOKEN (o robô não posta lá)")
+          else:
+              q = urllib.parse.urlencode({"fields": "user_id,username", "access_token": IG})
+              try:
+                  with urllib.request.urlopen(f"https://graph.instagram.com/me?{q}", timeout=30) as r:
+                      ig = json.loads(r.read())
+                  rel.append(f"Instagram: OK (@{ig.get('username', '?')})")
+              except urllib.error.HTTPError as e:
+                  try:
+                      msg = json.loads(e.read()).get("error", {}).get("message", "")
+                  except Exception:
+                      msg = ""
+                  rel.append(f"Instagram: ERRO {e.code} {msg}".replace(IG, "***")[:300])
+              except Exception as e:
+                  rel.append(f"Instagram: ERRO {e}".replace(IG, "***")[:300])
 
           # 2) Feed
           amostra = h = None

@@ -100,7 +100,13 @@ RITMO_TELA_VERDE = "+15%"        # tela verde: fala mais rápida, como nos víde
 USAR_FLOW = True
 MODELO_FLOW = "Omni 1.2 Flash"     # 24 créditos por clipe; o "Veo 3.1 - Lite" custa 10, mas erra mais o produto
 CREDITOS_FLOW = 24
-HORARIOS_POSTAGEM = ["11:47", "19:47"]   # só pra avisar no kit; os horários de verdade ficam no robo.yml
+# Horários dos vídeos (Brasília). Têm que bater com o robo.yml: lá também tem horários de reserva
+# (uma hora depois), que só postam se o horário de antes não rodou.
+HORARIOS_POSTAGEM = ["11:47", "19:47"]
+
+# Instagram: com o segredo INSTAGRAM_TOKEN, cada vídeo entregue vira um Reel no seu perfil (API oficial,
+# grátis). O robô renova a chave toda semana. Sem o segredo, nada muda.
+POSTAR_INSTAGRAM = True
 
 # ============================================================
 # (daqui pra baixo não precisa mexer)
@@ -112,6 +118,7 @@ SAIDA = PASTA / "saida"
 HISTORICO = PASTA / "historico.json"
 OFERTAS = PASTA / "ofertas.json"
 FILA = PASTA / "fila.json"          # produtos do dia esperando o clipe do Flow
+REDES = PASTA / "redes.json"        # vídeos pra postar nas redes (Instagram) e a validade da chave
 SITE = PASTA / "site"
 W, H = 1080, 1920
 
@@ -122,6 +129,8 @@ TG_CHAT = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 TG_CANAL = os.environ.get("TELEGRAM_CANAL", "").strip()
 FEED_URLS = os.environ.get("SHOPEE_FEED_URL", "").split()
 AFILIADO_ID = os.environ.get("SHOPEE_AFFILIATE_ID", "").strip()   # seu ID de afiliado (painel da Shopee)
+IG_TOKEN = os.environ.get("INSTAGRAM_TOKEN", "").strip()
+ORIGEM = os.environ.get("ORIGEM", "").strip()     # "schedule" quando é horário automático do robo.yml
 _repo = os.environ.get("GITHUB_REPOSITORY", "")          # "usuario/repositorio" quando roda no GitHub
 PAGINA_URL = (f"https://{_repo.split('/')[0]}.github.io/{_repo.split('/')[1]}/" if "/" in _repo else "")
 
@@ -129,8 +138,10 @@ METRICA = "vendidos"      # no modo feed vira "curtidas" (o feed não informa ve
 
 MODO_TESTE = "--teste" in sys.argv
 # kit = manda as fotos e o texto do Flow; postar = monta e entrega o próximo vídeo do dia;
-# completo = o jeito antigo (escolhe e monta tudo de uma vez, sem Flow)
-MODO = next((a for a in sys.argv[1:] if a in ("kit", "postar", "completo")), "completo")
+# completo = o jeito antigo (escolhe e monta tudo de uma vez, sem Flow);
+# instagram = posta no Instagram os vídeos já entregues (roda depois de publicar a página)
+MODO = next((a for a in sys.argv[1:] if a in ("kit", "postar", "completo", "instagram")), "completo")
+PROBLEMAS = []     # o que deu errado nesta execução: no fim o robô sai com erro (o GitHub avisa por e-mail)
 
 
 # ------------------------------------------------------------
@@ -2595,7 +2606,7 @@ def enviar_kit(fila, item, fotos):
     (se você responder uma delas com o vídeo, o robô sabe de qual produto é)."""
     e = html.escape
     p, ficha = item["produto"], item["ficha"]
-    ids = []
+    ids, chegou = [], True
     if fotos:
         arquivos = {f"f{k}": (f"foto{k + 1}.jpg", _jpeg_bytes(f), "image/jpeg") for k, f in enumerate(fotos)}
         if len(fotos) > 1:
@@ -2605,6 +2616,7 @@ def enviar_kit(fila, item, fotos):
         else:
             res = telegram("sendPhoto", {"chat_id": TG_CHAT}, {"photo": arquivos["f0"]})
             ids += [res["message_id"]] if res else []
+        chegou = bool(res)
     n, total = item["numero"], len(fila["itens"])
     hora = HORARIOS_POSTAGEM[n - 1] if n <= len(HORARIOS_POSTAGEM) else ""
     confere = "; ".join(ficha.get("detalhes_pt") or [])
@@ -2621,6 +2633,7 @@ def enviar_kit(fila, item, fotos):
     if res:
         ids.append(res["message_id"])
     item["msg_ids"] = ids
+    return chegou and bool(res)
 
 
 def _baixar_fotos(urls, pasta, prefixo="ref"):
@@ -2642,11 +2655,18 @@ def rodar_kit():
     pasta_dia.mkdir(parents=True, exist_ok=True)
 
     if fila.get("data") == hoje.isoformat() and fila.get("itens"):
+        if ORIGEM == "schedule" and fila.get("kit_entregue", True):
+            print("O kit de hoje já foi entregue.")      # horário de reserva: o das 07:47 deu certo
+            return
         print("O kit de hoje já existe: mandando de novo o que ainda espera clipe.")
+        chegou = True
         for item in fila["itens"]:
             if item["status"] == "aguardando" and not item.get("clipe"):
                 _, fotos = _baixar_fotos(item["fotos_ref"], pasta_dia / f"kit{item['numero']}")
-                enviar_kit(fila, item, fotos)
+                chegou = enviar_kit(fila, item, fotos) and chegou
+        fila["kit_entregue"] = chegou
+        if not chegou:
+            problema("O kit de hoje não chegou inteiro no Telegram. Confira o bot e o segredo TELEGRAM_CHAT_ID.")
         salvar_fila(fila)
         return
 
@@ -2694,8 +2714,13 @@ def rodar_kit():
     elif USAR_FLOW and (TG_CHAT or MODO_TESTE):
         avisar(f"☀️ Kit de hoje ({hoje:%d/%m}): {len(itens)} vídeo(s). Gere os clipes juntos no Flow "
                f"({len(itens) * CREDITOS_FLOW} créditos). Se não der tempo, sem problema: o robô posta com as fotos.")
+        chegou = True
         for item in itens:
-            enviar_kit(fila, item, item["_fotos"])
+            chegou = enviar_kit(fila, item, item["_fotos"]) and chegou
+        fila["kit_entregue"] = chegou
+        if not chegou:
+            problema("O kit de hoje não chegou inteiro no Telegram (o horário de reserva tenta de novo). "
+                     "Confira o bot e o segredo TELEGRAM_CHAT_ID.")
     for item in itens:
         item.pop("_fotos", None)
     salvar_fila(fila)
@@ -2855,6 +2880,8 @@ def rodar_postar():
     """Monta e entrega o próximo vídeo do dia (primeiro o que já tem clipe aprovado)."""
     global METRICA
     hoje = dt.date.today()
+    if not falta_video_agora():
+        return
     fila = ler_fila()
     if fila.get("data") != hoje.isoformat() or not fila.get("itens"):
         print("Não tem kit de hoje: fazendo 1 vídeo do jeito antigo.")
@@ -2881,7 +2908,11 @@ def rodar_postar():
         print(f"  erro montando com o clipe ({e}); tentando só com as fotos")
         clipe = None
         r = produzir_video(item, pasta_dia, rnd)
-    entregar_telegram(r)
+    if not entregar_telegram(r):
+        problema(f"O vídeo {item['numero']} ({item['titulo']}) ficou pronto, mas não chegou no Telegram. "
+                 "Ele continua na fila e sai na próxima execução.")
+        salvar_fila(fila)
+        return
     if USAR_FLOW and not clipe:
         motivo = (item.get("clipe") or {}).get("motivo") or "o clipe do Flow não chegou a tempo"
         avisar(f"(O vídeo {item['numero']} saiu só com as fotos: {motivo}.)")
@@ -2893,12 +2924,28 @@ def rodar_postar():
     texto = r["whatsapp"] + "\n\n_Link de afiliado · preço de hoje, pode mudar_"
     if PAGINA_URL:
         texto += f"\n\nTodas as ofertas: {PAGINA_URL}"
-    publicar_painel([{"palavra": r["titulo"], "video": r["video"], "legenda": r["legenda"],
-                      "ia": r.get("ia")}], texto)
+    entrega = {"palavra": r["titulo"], "video": r["video"], "legenda": r["legenda"], "ia": r.get("ia")}
+    publicar_painel([entrega], texto)
+    agendar_redes(r["titulo"], entrega["arquivo"], r["legenda"])
     avisar("Pro WhatsApp (copie tudo abaixo e cole no seu canal):")
     avisar(texto)
     salvar_fila(fila)
     print(f"Pronto: vídeo {item['numero']} entregue.")
+
+
+def falta_video_agora():
+    """Nos horários automáticos (e nos de reserva, uma hora depois), só posta se ainda falta vídeo pros
+    horários que já passaram. Assim a reserva cobre um horário que o GitHub pulou, sem adiantar o próximo.
+    Pelo botão "Run workflow" posta sempre."""
+    if ORIGEM != "schedule":
+        return True
+    agora = dt.datetime.now().strftime("%H:%M")
+    devidos = sum(1 for h in HORARIOS_POSTAGEM if agora >= h)
+    feitos = sum(1 for o in ler_ofertas() if o.get("data") == dt.date.today().isoformat())
+    if feitos >= devidos:
+        print(f"Nada pra postar agora: hoje já saíram {feitos} vídeo(s), e até as {agora} eram {devidos}.")
+        return False
+    return True
 
 
 def baixar_foto(url, destino):
@@ -3021,6 +3068,186 @@ def avisar(texto):
                                  "disable_web_page_preview": "true"})
     else:
         print(texto)
+
+
+def problema(texto):
+    """Algo deu errado: avisa no Telegram (se ele estiver funcionando) e, no fim, a execução sai com erro,
+    então o GitHub marca em vermelho e manda e-mail. O resto do trabalho continua normalmente."""
+    print(f"PROBLEMA: {texto}")
+    PROBLEMAS.append(texto)
+    avisar("⚠️ " + texto)
+
+
+# ------------------------------------------------------------
+# Instagram: posta cada vídeo entregue como Reel no seu perfil (API oficial da Meta, grátis).
+# O Instagram baixa o vídeo pelo link da página de ofertas, então este passo roda no robo.yml
+# depois de publicar a página ("python bot.py instagram"). Se der erro, o próximo horário tenta
+# de novo (até 3 vezes, no mesmo dia). A chave vale 60 dias; o robô renova toda semana.
+# ------------------------------------------------------------
+IG_API = "https://graph.instagram.com"
+IG_TENTATIVAS = 3
+_IG_CHAVE = [IG_TOKEN]      # a chave em uso (muda se a renovação devolver outra)
+
+
+def ler_redes():
+    try:
+        d = json.loads(REDES.read_text())
+    except Exception:
+        d = {}
+    d.setdefault("posts", [])
+    return d
+
+
+def salvar_redes(d):
+    d["posts"] = d["posts"][-60:]
+    REDES.write_text(json.dumps(d, ensure_ascii=False, indent=1))
+
+
+def agendar_redes(titulo, arquivo, legenda):
+    """Põe o vídeo entregue na fila do Instagram (o passo 'instagram' do robo.yml posta)."""
+    if not (POSTAR_INSTAGRAM and IG_TOKEN):
+        return
+    d = ler_redes()
+    d["posts"].append({"data": dt.date.today().isoformat(), "titulo": titulo, "arquivo": arquivo,
+                       "legenda": legenda, "instagram": "pendente", "tentativas": 0})
+    salvar_redes(d)
+
+
+def _sem_chave(texto):
+    """Tira a chave de qualquer mensagem (o registro do GitHub de um repositório público é público)."""
+    t = str(texto)
+    for chave in {IG_TOKEN, _IG_CHAVE[0]}:
+        if chave:
+            t = t.replace(chave, "***")
+    return t[:300]
+
+
+def _ig(metodo, caminho, **dados):
+    """Chama a API do Instagram. Erro vira exceção com a mensagem da Meta (sem a chave)."""
+    dados["access_token"] = _IG_CHAVE[0]
+    try:
+        if metodo == "get":
+            r = requests.get(f"{IG_API}/{caminho}", params=dados, timeout=60)
+        else:
+            r = requests.post(f"{IG_API}/{caminho}", data=dados, timeout=120)
+        j = r.json()
+    except Exception as e:
+        raise RuntimeError(_sem_chave(e)) from None
+    if not r.ok or (isinstance(j, dict) and "error" in j):
+        erro = j.get("error", {}) if isinstance(j, dict) else {}
+        raise RuntimeError(_sem_chave(erro.get("message") or r.text))
+    return j
+
+
+def video_no_ar(url, espera=300):
+    """Espera o vídeo aparecer na página publicada (o GitHub Pages leva alguns segundos)."""
+    fim = time.time() + espera
+    while True:
+        try:
+            r = requests.head(url, timeout=30, allow_redirects=True)
+            if r.ok and r.headers.get("Content-Type", "").startswith("video"):
+                return True
+        except Exception:
+            pass
+        if time.time() > fim:
+            return False
+        time.sleep(15)
+
+
+def postar_reel(video_url, legenda):
+    """Cria o Reel, espera o Instagram processar e publica. Devolve (id, link)."""
+    eu = _ig("get", "me", fields="user_id,username")
+    uid = eu.get("user_id") or eu.get("id") or "me"
+    cont = _ig("post", f"{uid}/media", media_type="REELS", video_url=video_url,
+               caption=legenda[:2200], share_to_feed="true")["id"]
+    for _ in range(60):                       # baixar e processar leva de segundos a alguns minutos
+        time.sleep(10)
+        st = _ig("get", cont, fields="status_code,status")
+        if st.get("status_code") == "FINISHED":
+            break
+        if st.get("status_code") in ("ERROR", "EXPIRED"):
+            raise RuntimeError(f"o Instagram recusou o vídeo ({st.get('status') or st.get('status_code')})")
+    else:
+        raise RuntimeError("o Instagram demorou demais pra processar o vídeo")
+    mid = _ig("post", f"{uid}/media_publish", creation_id=cont)["id"]
+    try:
+        link = _ig("get", mid, fields="permalink").get("permalink", "")
+    except Exception:
+        link = ""
+    return mid, link
+
+
+def cuidar_da_chave_ig(d):
+    """A chave do Instagram vale 60 dias e só pode ser renovada depois de 24 h: o robô renova uma vez por
+    semana. Se a chave nova vier diferente, o robo.yml salva no segredo (precisa do GH_PAT_SEGREDOS)."""
+    hoje = dt.date.today()
+    if not d.get("chave_desde"):              # chave nova: anota e só renova daqui a uma semana
+        d["chave_desde"] = d["chave_renovada"] = hoje.isoformat()
+        d["chave_vence"] = (hoje + dt.timedelta(days=60)).isoformat()
+        return
+    if (hoje - dt.date.fromisoformat(d["chave_renovada"])).days >= 7:
+        try:
+            j = _ig("get", "refresh_access_token", grant_type="ig_refresh_token")
+        except Exception as e:
+            problema(f"Não consegui renovar a chave do Instagram ({e}). Se ela vencer, o robô para de postar "
+                     "lá: gere uma chave nova no painel da Meta e troque o segredo INSTAGRAM_TOKEN.")
+            j = {}
+        novo = j.get("access_token", "")
+        if novo:
+            d["chave_renovada"] = hoje.isoformat()
+            salva = novo == _IG_CHAVE[0] or os.environ.get("TEM_GH_PAT") == "sim"
+            if novo != _IG_CHAVE[0]:
+                print(f"::add-mask::{novo}")     # esconde a chave nova no registro público do GitHub
+                _IG_CHAVE[0] = novo
+                destino = Path(os.environ.get("RUNNER_TEMP") or "/tmp") / "instagram_token_novo.txt"
+                destino.write_text(novo)
+            if salva and j.get("expires_in"):
+                d["chave_vence"] = (hoje + dt.timedelta(seconds=int(j["expires_in"]))).isoformat()
+            elif not salva:
+                avisar("A chave do Instagram foi renovada e mudou, mas o robô não tem permissão de salvar a nova "
+                       "(falta o segredo GH_PAT_SEGREDOS). A atual continua valendo até "
+                       f"{dt.date.fromisoformat(d['chave_vence']):%d/%m}.")
+    faltam = (dt.date.fromisoformat(d["chave_vence"]) - hoje).days
+    if faltam <= 10:
+        problema(f"A chave do Instagram vence em {max(faltam, 0)} dia(s). Gere uma nova no painel da Meta e "
+                 "troque o segredo INSTAGRAM_TOKEN (ou crie o GH_PAT_SEGREDOS pro robô renovar sozinho).")
+
+
+def rodar_instagram():
+    """Posta no Instagram os vídeos entregues que estão na fila (redes.json)."""
+    if not (POSTAR_INSTAGRAM and IG_TOKEN):
+        print("Instagram: desligado (sem o segredo INSTAGRAM_TOKEN).")
+        return
+    d = ler_redes()
+    hoje = dt.date.today().isoformat()
+    for x in d["posts"]:
+        if x.get("instagram") not in ("pendente", "erro"):
+            continue
+        if x["data"] != hoje or x.get("tentativas", 0) >= IG_TENTATIVAS:
+            x["instagram"] = "desistiu"
+            problema(f"Não consegui postar \"{x['titulo']}\" no Instagram "
+                     f"({x.get('erro') or 'o vídeo já saiu da página'}). Poste esse à mão: o vídeo está no Telegram.")
+            continue
+        url = f"{PAGINA_URL}videos/{x['arquivo']}"
+        x["tentativas"] = x.get("tentativas", 0) + 1
+        if not PAGINA_URL or not video_no_ar(url, espera=300 if x["tentativas"] == 1 else 30):
+            x["instagram"] = "desistiu"     # a página é trocada a cada vídeo: esperar mais não adianta
+            problema(f"Não consegui postar \"{x['titulo']}\" no Instagram: o vídeo não apareceu na página de "
+                     "ofertas (a publicação da página falhou?). Poste esse à mão: o vídeo está no Telegram.")
+            continue
+        print(f"Instagram: postando {x['titulo']}...")
+        try:
+            mid, link = postar_reel(url, x["legenda"])
+        except Exception as e:
+            x["instagram"], x["erro"] = "erro", _sem_chave(e)
+            print(f"Instagram: {x['titulo']}: {x['erro']}")
+            avisar(f"Instagram: não deu pra postar \"{x['titulo']}\" ({x['erro']}). Tento de novo no próximo horário.")
+            continue
+        x.update(instagram="postado", ig_id=mid, ig_link=link, ig_hora=dt.datetime.now().strftime("%H:%M"))
+        x.pop("erro", None)
+        avisar(f"📸 Postado no Instagram: {x['titulo']}" + (f"\n{link}" if link else ""))
+    cuidar_da_chave_ig(d)
+    salvar_redes(d)
 
 
 # ------------------------------------------------------------
@@ -3409,18 +3636,23 @@ def fazer_comparativo(produtos, palavra, hist, pasta_dia, rnd, usar_feed, sub):
 
 
 def entregar_telegram(r):
+    """Manda o vídeo pronto no seu chat. Devolve False se o vídeo não chegou: aí ele não conta como postado."""
     if TG_CHAT:
         with open(r["video"], "rb") as fv:
-            telegram("sendVideo", {"chat_id": TG_CHAT, "caption": r["resumo"][:1000],
-                                   "supports_streaming": "true"}, {"video": fv})
+            chegou = telegram("sendVideo", {"chat_id": TG_CHAT, "caption": r["resumo"][:1000],
+                                            "supports_streaming": "true"}, {"video": fv})
+        if not chegou:
+            return False
         avisar("Legenda pra copiar:\n\n" + r["legenda"])
         telegram("sendMessage", {"chat_id": TG_CHAT, "text": "Links:\n\n" + r["canal"],
                                  "parse_mode": "HTML", "disable_web_page_preview": "true"})
     else:
         print(r["resumo"] + "\n\n" + r["legenda"] + "\n\n" + r["canal"])
-    if TG_CANAL:
-        telegram("sendPhoto", {"chat_id": TG_CANAL, "photo": r["foto_canal"],
-                               "caption": r["canal"], "parse_mode": "HTML"})
+    if TG_CANAL and not telegram("sendPhoto", {"chat_id": TG_CANAL, "photo": r["foto_canal"],
+                                               "caption": r["canal"], "parse_mode": "HTML"}):
+        problema("Não consegui postar no canal do Telegram. Confira se o robô é administrador do canal "
+                 "(com permissão de publicar) e se o segredo TELEGRAM_CANAL está certo (ex.: @nomedocanal).")
+    return True
 
 
 def preparar_busca():
@@ -3459,12 +3691,10 @@ def preparar_busca():
 
 
 def main():
-    if MODO == "kit":
-        rodar_kit()
-    elif MODO == "postar":
-        rodar_postar()
-    else:
-        rodar_completo()
+    {"kit": rodar_kit, "postar": rodar_postar, "instagram": rodar_instagram}.get(MODO, rodar_completo)()
+    if PROBLEMAS:
+        print("\nEsta execução teve problema(s):\n- " + "\n- ".join(PROBLEMAS))
+        sys.exit(1)
 
 
 def rodar_completo(maximo=None):
@@ -3493,7 +3723,10 @@ def rodar_completo(maximo=None):
             if not r:
                 print("  nada bom pra essa palavra hoje")
                 continue
-            entregar_telegram(r)
+            if not entregar_telegram(r):
+                problema(f"O vídeo \"{r['titulo']}\" ficou pronto, mas não chegou no Telegram, então não "
+                         "contei como postado. Confira o bot e o segredo TELEGRAM_CHAT_ID.")
+                continue
             blocos_whatsapp.append(r["whatsapp"])
             entregas.append({"palavra": r["titulo"], "video": r["video"], "legenda": r["legenda"],
                              "ia": r.get("ia")})
@@ -3518,6 +3751,8 @@ def rodar_completo(maximo=None):
             texto += f"\n\nTodas as ofertas: {PAGINA_URL}"
     publicar_pagina(ofertas)
     publicar_painel(entregas, texto)
+    for x in entregas:
+        agendar_redes(x["palavra"], x["arquivo"], x["legenda"])
     if texto:
         avisar("Pro WhatsApp (copie tudo abaixo e cole no seu canal):")
         avisar(texto)
