@@ -1,0 +1,173 @@
+name: Homologar integrações (sem publicar)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "gabriellwalter/Dio.desafio.github"
+    paths:
+      - ".github/workflows/homologar-integracoes.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verificar:
+    name: Validar credenciais sem enviar conteúdo
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    environment: github-pages
+    steps:
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar cliente HTTP
+        run: python -m pip install -q requests
+      - name: Consultar APIs com operações somente de leitura
+        env:
+          SHOPEE_FEED_URL: ${{ secrets.SHOPEE_FEED_URL }}
+          SHOPEE_APP_ID: ${{ secrets.SHOPEE_APP_ID }}
+          SHOPEE_SECRET: ${{ secrets.SHOPEE_SECRET }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_CANAL: ${{ secrets.TELEGRAM_CANAL }}
+          INSTAGRAM_TOKEN: ${{ secrets.INSTAGRAM_TOKEN }}
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+        run: |
+          python - <<'PY'
+          """Smoke test: nenhuma chamada publica, edita, comenta, envia mensagem ou faz upload."""
+          import hashlib
+          import json
+          import os
+          import time
+          import requests
+
+          def env(key):
+              return os.environ.get(key, "").strip()
+
+          def request_json(method, url, **kwargs):
+              """Não permitir vazamento de tokens via URLs, respostas ou exceptions nos logs."""
+              try:
+                  r = requests.request(method, url, timeout=(10, 25), **kwargs)
+                  if r.status_code >= 400:
+                      return None, "HTTP " + str(r.status_code)
+                  return r.json(), "HTTP " + str(r.status_code)
+              except (requests.RequestException, ValueError):
+                  return None, "falha de comunicação ou JSON"
+
+          results = []
+          errors = []
+
+          def report(name, status, detail, required=True):
+              print(f"{name}: {status} ({detail})")
+              results.append((name, status))
+              if status == "FALHOU" and required:
+                  errors.append(name)
+
+          # getMe/getChat são somente leitura; sendMessage/sendVideo NÃO são usados.
+          token, chat = env("TELEGRAM_TOKEN"), env("TELEGRAM_CHAT_ID")
+          if not token or not chat:
+              report("Telegram", "FALHOU", "TELEGRAM_TOKEN ou TELEGRAM_CHAT_ID ausente")
+          else:
+              me, state = request_json("GET", f"https://api.telegram.org/bot{token}/getMe")
+              if not me or not me.get("ok") or not me.get("result", {}).get("is_bot"):
+                  report("Telegram", "FALHOU", "getMe " + state)
+              else:
+                  result, chat_state = request_json(
+                      "POST", f"https://api.telegram.org/bot{token}/getChat",
+                      data={"chat_id": chat}
+                  )
+                  if not result or not result.get("ok"):
+                      report("Telegram", "FALHOU", "getChat " + chat_state)
+                  else:
+                      report("Telegram", "OK", "token válido e acesso ao chat confirmado")
+                  canal = env("TELEGRAM_CANAL")
+                  if canal:
+                      own_id = me["result"].get("id")
+                      member, state = request_json(
+                          "POST", f"https://api.telegram.org/bot{token}/getChatMember",
+                          data={"chat_id": canal, "user_id": own_id}
+                      )
+                      status = (member or {}).get("result", {}).get("status", "")
+                      if member and member.get("ok") and status in ("administrator", "creator"):
+                          report("Telegram canal", "OK", "bot administrador")
+                      else:
+                          report("Telegram canal", "FALHOU", "permissão de administração não confirmada " + state)
+
+          feeds = env("SHOPEE_FEED_URL").split()
+          if feeds:
+              # Evita baixar todo o feed; checa acesso HTTP e retorno não vazio.
+              try:
+                  with requests.get(feeds[0], stream=True, timeout=(10, 25)) as r:
+                      r.raise_for_status()
+                      sample = next(r.iter_content(chunk_size=4096), b"")
+                  if sample:
+                      report("Shopee Feed", "OK", "URL acessível e resposta não vazia")
+                  else:
+                      report("Shopee Feed", "FALHOU", "resposta vazia")
+              except (requests.RequestException, StopIteration):
+                  report("Shopee Feed", "FALHOU", "não foi possível acessar o feed")
+          elif env("SHOPEE_APP_ID") and env("SHOPEE_SECRET"):
+              payload = json.dumps({"query": '{productOfferV2(keyword:"fone",page:1,limit:1){nodes{itemId}}}'},
+                                   separators=(",", ":"))
+              ts = str(int(time.time()))
+              key = env("SHOPEE_APP_ID")
+              signature = hashlib.sha256((key + ts + payload + env("SHOPEE_SECRET")).encode()).hexdigest()
+              data, state = request_json(
+                  "POST", "https://open-api.affiliate.shopee.com.br/graphql",
+                  data=payload.encode(),
+                  headers={
+                      "Content-Type": "application/json",
+                      "Authorization": f"SHA256 Credential={key}, Timestamp={ts}, Signature={signature}",
+                  }
+              )
+              if isinstance(data, dict) and data.get("data") and not data.get("errors"):
+                  report("Shopee API", "OK", "consulta GraphQL de leitura validada")
+              else:
+                  report("Shopee API", "FALHOU", "consulta GraphQL não validada " + state)
+          else:
+              report("Shopee", "FALHOU", "configure SHOPEE_FEED_URL ou APP_ID + SECRET")
+
+          instagram = env("INSTAGRAM_TOKEN")
+          if instagram:
+              d, state = request_json(
+                  "GET", "https://graph.instagram.com/me",
+                  params={"fields": "user_id,username", "access_token": instagram}
+              )
+              if isinstance(d, dict) and (d.get("user_id") or d.get("id")):
+                  report("Instagram", "OK", "token aceito em consulta do perfil")
+              else:
+                  report("Instagram", "FALHOU", "consulta de perfil não autorizada " + state)
+          else:
+              report("Instagram", "IGNORADO", "token opcional não configurado")
+
+          youtube = [env(k) for k in ("YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN")]
+          if all(youtube):
+              data, state = request_json(
+                  "POST", "https://oauth2.googleapis.com/token",
+                  data={
+                      "client_id": youtube[0],
+                      "client_secret": youtube[1],
+                      "refresh_token": youtube[2],
+                      "grant_type": "refresh_token"
+                  }
+              )
+              if isinstance(data, dict) and data.get("access_token"):
+                  report("YouTube", "OK", "OAuth renovou access token (sem upload)")
+              else:
+                  report("YouTube", "FALHOU", "renovação OAuth recusada " + state)
+          elif any(youtube):
+              report("YouTube", "FALHOU", "credenciais OAuth incompletas")
+          else:
+              report("YouTube", "IGNORADO", "credenciais opcionais não configuradas")
+
+          print("\nResumo: operações de leitura/autenticação executadas; nenhuma publicação realizada.")
+          print("Os resultados NÃO comprovam permissões de postagem nem disponibilidade futura das APIs.")
+          if errors:
+              print("Integrações com falha: " + ", ".join(errors))
+              raise SystemExit(1)
+          print("Homologação de autenticação concluída sem falhas.")
+          PY
