@@ -82,7 +82,7 @@ jobs:
           esperados = {"47 14 * * *", "47 15 * * *", "47 18 * * *", "47 19 * * *", "47 22 * * *", "47 23 * * *"}
           assert esperados.issubset(set(crons)), f"Faltam cron principal/reserva: {esperados - set(crons)}"
           bot_text = Path("bot.py").read_text(encoding="utf-8")
-          assert '("kit", "postar", "completo", "instagram", "youtube")' in bot_text, "Modo YouTube ausente"
+          assert '"limpar-videos"' in bot_text, "Modo de retenção de arquivos ausente"
           assert "def enviar_short_youtube(" in bot_text and "def rodar_youtube(" in bot_text, "Upload YouTube ausente"
           assert "yt_ativo = bool(YT_CLIENT_ID and YT_CLIENT_SECRET and YT_REFRESH_TOKEN)" in bot_text, "Fila não considera credenciais do YouTube"
           workflow = Path(".github/workflows/robo.yml").read_text(encoding="utf-8")
