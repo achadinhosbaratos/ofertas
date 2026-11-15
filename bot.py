@@ -8,11 +8,10 @@ Todo dia ele:
   2. pega os mais populares de algumas palavras-chave e acha uma opção
      parecida e bem mais barata;
   3. usa os seus links de afiliado que já vêm no feed;
-  4. monta um vídeo vertical (9:16) com narração;
-  5. manda o vídeo + legenda pronta pro seu Telegram
-     (e, se você tiver, posta a oferta no seu canal).
+  4. monta automaticamente um vídeo vertical (9:16) com narração;
+  5. publica a oferta nos canais configurados e prepara a página de ofertas.
 
-Você só precisa mexer na parte "CONFIGURAÇÃO" logo abaixo.
+O fluxo padrão não depende de clipes manuais do Google Flow.
 """
 
 import csv
@@ -93,12 +92,10 @@ VOZ = "pt-BR-FranciscaNeural"   # voz feminina; "pt-BR-AntonioNeural" é a mascu
 VELOCIDADE = "+8%"               # ritmo da narração ("+0%" normal, "+15%" mais rápido)
 RITMO_TELA_VERDE = "+15%"        # tela verde: fala mais rápida, como nos vídeos de afiliado que vendem
 
-# Clipes do Google Flow: de manhã o robô manda no Telegram as fotos e o texto pronto de cada produto;
-# você gera o clipe no Flow (celular) e manda de volta pro robô. Ele confere se o produto saiu igual
-# e usa o clipe em quase todo o vídeo: inteiro no começo, depois trechos dele com zoom, e a foto do
-# produto só no final, com a chamada. Se o clipe não chegar a tempo, o vídeo sai só com as fotos.
-USAR_FLOW = True
-MODELO_FLOW = "Omni 1.2 Flash"     # 24 créditos por clipe; o "Veo 3.1 - Lite" custa 10, mas erra mais o produto
+# Google Flow é opcional. Desligado por padrão para o robô não depender de uma etapa manual.
+# Se ativado, o sistema poderá usar clipes enviados pelo Telegram; sem clipe, monta com fotos.
+USAR_FLOW = False
+MODELO_FLOW = "Omni 1.2 Flash"
 CREDITOS_FLOW = 24
 # Horários dos vídeos (Brasília). Têm que bater com o robo.yml: lá também tem horários de reserva
 # (uma hora depois), que só postam se o horário de antes não rodou.
@@ -2889,8 +2886,11 @@ def rodar_postar():
     METRICA = fila.get("metrica", METRICA)
     pasta_dia = SAIDA / hoje.isoformat()
     pasta_dia.mkdir(parents=True, exist_ok=True)
-    receber_clipes(fila)
-    prontos = conferir_clipes(fila, pasta_dia) if USAR_FLOW else {}
+    if USAR_FLOW:
+        receber_clipes(fila)
+        prontos = conferir_clipes(fila, pasta_dia)
+    else:
+        prontos = {}
     salvar_fila(fila)                     # guarda os clipes recebidos mesmo se a montagem falhar
     pendentes = [it for it in fila["itens"] if it["status"] == "aguardando"]
     if not pendentes:
@@ -2899,7 +2899,8 @@ def rodar_postar():
     item = next((it for it in pendentes if it["numero"] in prontos), pendentes[0])
     clipe = prontos.get(item["numero"])
     rnd = random.Random(hoje.toordinal() * 10 + item["numero"])
-    print(f"> vídeo {item['numero']}: {item['titulo']} ({'com clipe do Flow' if clipe else 'só com fotos'})")
+    modo_video = "com clipe do Flow" if clipe else ("montagem automática com fotos" if not USAR_FLOW else "só com fotos")
+    print(f"> vídeo {item['numero']}: {item['titulo']} ({modo_video})")
     try:
         r = produzir_video(item, pasta_dia, rnd, clipe)
     except Exception as e:
