@@ -1,0 +1,61 @@
+name: Verificações do robô
+
+on:
+  push:
+    branches:
+      - "codex/**"
+  pull_request:
+    branches:
+      - "**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verificar sintaxe Python
+        run: python -m py_compile bot.py
+      - name: Validar JSONs versionados
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          for name in ("fila.json", "historico.json", "ofertas.json"):
+              path = Path(name)
+              if path.exists():
+                  with path.open(encoding="utf-8") as f:
+                      json.load(f)
+                  print(f"OK: {name}")
+          PY
+      - name: Confirmar que o Flow manual está desligado por padrão
+        run: |
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          tree = ast.parse(Path("bot.py").read_text(encoding="utf-8"))
+          values = [
+              node.value
+              for node in tree.body
+              if isinstance(node, ast.Assign)
+              and any(isinstance(target, ast.Name) and target.id == "USAR_FLOW"
+                      for target in node.targets)
+          ]
+          assert values, "Configuração USAR_FLOW não encontrada"
+          assert isinstance(values[-1], ast.Constant) and values[-1].value is False, (
+              "USAR_FLOW deve permanecer False por padrão para manter a automação sem etapa manual"
+          )
+          print("OK: Google Flow desativado por padrão")
+          PY
+      - name: Verificar whitespace
+        run: git diff --check
