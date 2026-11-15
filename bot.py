@@ -55,7 +55,7 @@ PALAVRAS = [
     "kit facas cozinha",
 ]
 
-VIDEOS_POR_DIA = 2        # quantos vídeos por dia
+VIDEOS_POR_DIA = 3        # quantos vídeos por dia
 PRECO_MAXIMO = 150        # achadinho vende por impulso: acima desse preço o produto fica de fora (0 = sem limite)
 NOTA_MINIMA = 4.5         # nota mínima dos produtos (0 a 5)
 VENDAS_MINIMAS = 100      # vendas mínimas da opção barata (só no modo Open API)
@@ -99,7 +99,7 @@ MODELO_FLOW = "Omni 1.2 Flash"
 CREDITOS_FLOW = 24
 # Horários dos vídeos (Brasília). Têm que bater com o robo.yml: lá também tem horários de reserva
 # (uma hora depois), que só postam se o horário de antes não rodou.
-HORARIOS_POSTAGEM = ["11:47", "19:47"]
+HORARIOS_POSTAGEM = ["11:47", "15:47", "19:47"]
 
 # Instagram: com o segredo INSTAGRAM_TOKEN, cada vídeo entregue vira um Reel no seu perfil (API oficial,
 # grátis). O robô renova a chave toda semana. Sem o segredo, nada muda.
