@@ -16,6 +16,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Instalar FFmpeg no runner
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
       - name: Criar MP4 sintético com FFmpeg
         run: |
           set -euo pipefail
@@ -46,6 +50,10 @@ jobs:
         with:
           name: videos-pendentes-validacao
           path: site/videos
+      - name: Instalar FFmpeg no runner
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
       - name: Verificar integridade e formato
         run: |
           set -euo pipefail
