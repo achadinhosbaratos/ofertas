@@ -2,19 +2,19 @@ name: Robô de achadinhos
 
 on:
   schedule:
-    - cron: "47 10 * * *"   # 07:47 (Brasília): kit do dia no Telegram (fotos + texto pro Flow)
-    - cron: "47 11 * * *"   # 08:47: reserva do kit (só age se o das 07:47 não chegou)
-    - cron: "47 14 * * *"   # 11:47 (Brasília): monta e entrega o 1º vídeo
-    - cron: "47 15 * * *"   # 12:47: reserva (só posta se o das 11:47 não saiu)
-    - cron: "47 22 * * *"   # 19:47 (Brasília): monta e entrega o 2º vídeo
-    - cron: "47 23 * * *"   # 20:47: reserva (só posta se o das 19:47 não saiu)
+    - cron: "47 14 * * *"   # 11:47 (Brasília): 1º vídeo
+    - cron: "47 15 * * *"   # 12:47: reserva do 1º vídeo
+    - cron: "47 18 * * *"   # 15:47 (Brasília): 2º vídeo
+    - cron: "47 19 * * *"   # 16:47: reserva do 2º vídeo
+    - cron: "47 22 * * *"   # 19:47 (Brasília): 3º vídeo
+    - cron: "47 23 * * *"   # 20:47: reserva do 3º vídeo
   workflow_dispatch:         # botão "Run workflow" pra rodar na hora
     inputs:
       modo:
-        description: "postar = próximo vídeo do dia · kit = manda o kit de novo · completo = jeito antigo, sem Flow"
+        description: "postar = próximo vídeo do dia · completo = gera até 3 vídeos"
         type: choice
         default: postar
-        options: [postar, kit, completo]
+        options: [postar, completo]
 
 permissions:
   contents: write   # salvar histórico, ofertas e a fila do dia
@@ -71,10 +71,7 @@ jobs:
         run: |
           MODO="${{ inputs.modo }}"
           if [ -z "$MODO" ]; then
-            case "${{ github.event.schedule }}" in
-              "47 10 * * *"|"47 11 * * *") MODO=kit ;;
-              *) MODO=postar ;;
-            esac
+            MODO=postar
           fi
           echo "Modo: $MODO"
           python bot.py "$MODO"
