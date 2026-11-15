@@ -1,6 +1,28 @@
 [
  {
   "tipo": "promo",
+  "data": "2026-11-15",
+  "palavra": "mini processador",
+  "metrica": "curtidas",
+  "produto": {
+   "nome": "Mini Processador de Alimentos Britânia 360ml Função Pulsar 2P",
+   "nome_curto": "Mini Processador Britânia",
+   "preco": 89.9,
+   "preco_cheio": 169.9,
+   "desconto": 0.4708652148322543,
+   "imagem": "https://cf.shopee.com.br/file/sg-11134201-8258s-mvfxb3leqghz20",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F811879342%2F20975432830",
+   "nota": 4.82,
+   "pop": 26548,
+   "beneficios": [
+    "Tritura com apenas um toque",
+    "Lâmina em aço inoxidável",
+    "Com trava de segurança"
+   ]
+  }
+ },
+ {
+  "tipo": "promo",
   "data": "2026-11-09",
   "palavra": "mop giratório",
   "metrica": "curtidas",
