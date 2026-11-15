@@ -3046,7 +3046,7 @@ _TG_FALSO = [1000]     # números de mensagem de mentira no modo teste
 
 def telegram(metodo, dados, arquivos=None):
     """Chama a API do Telegram e devolve o 'result' (ou None se deu erro)."""
-    if MODO_TESTE or not TG_TOKEN:
+    if MODO_TESTE:
         print(f"[telegram:{metodo}] {dados.get('caption') or dados.get('text', '')}"[:300])
         _TG_FALSO[0] += 1
         if metodo == "sendMediaGroup":
@@ -3054,6 +3054,9 @@ def telegram(metodo, dados, arquivos=None):
             _TG_FALSO[0] += n
             return [{"message_id": _TG_FALSO[0] - k} for k in range(n, 0, -1)]
         return {"message_id": _TG_FALSO[0]}
+    if not TG_TOKEN:
+        print("Telegram: TELEGRAM_TOKEN ausente; envio real não foi realizado.")
+        return None
     try:
         r = requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/{metodo}",
                           data=dados, files=arquivos, timeout=120)
@@ -3114,7 +3117,11 @@ def agendar_redes(titulo, arquivo, legenda):
     if not (ig_ativo or yt_ativo):
         return
     d = ler_redes()
-    d["posts"].append({"data": dt.date.today().isoformat(), "titulo": titulo, "arquivo": arquivo,
+    hoje = dt.date.today().isoformat()
+    if any(p.get("data") == hoje and p.get("arquivo") == arquivo for p in d["posts"]):
+        print(f"Redes: vídeo {arquivo} já está na fila, sem duplicar.")
+        return
+    d["posts"].append({"data": hoje, "titulo": titulo, "arquivo": arquivo,
                        "legenda": legenda, "instagram": "pendente" if ig_ativo else "desligado",
                        "youtube": "pendente" if yt_ativo else "desligado", "tentativas": 0})
     salvar_redes(d)
@@ -3729,6 +3736,9 @@ def fazer_comparativo(produtos, palavra, hist, pasta_dia, rnd, usar_feed, sub):
 
 def entregar_telegram(r):
     """Manda o vídeo pronto no seu chat. Devolve False se o vídeo não chegou: aí ele não conta como postado."""
+    if not MODO_TESTE and not (TG_TOKEN and TG_CHAT):
+        print("Telegram: faltam TELEGRAM_TOKEN e/ou TELEGRAM_CHAT_ID; vídeo não foi entregue.")
+        return False
     if TG_CHAT:
         with open(r["video"], "rb") as fv:
             chegou = telegram("sendVideo", {"chat_id": TG_CHAT, "caption": r["resumo"][:1000],
@@ -3783,6 +3793,9 @@ def preparar_busca():
 
 
 def main():
+    if MODO in ("postar", "completo") and not MODO_TESTE and not (TG_TOKEN and TG_CHAT):
+        print("Configuração inválida: configure TELEGRAM_TOKEN e TELEGRAM_CHAT_ID para publicar.", file=sys.stderr)
+        sys.exit(1)
     {"kit": rodar_kit, "postar": rodar_postar, "instagram": rodar_instagram, "youtube": rodar_youtube}.get(MODO, rodar_completo)()
     if PROBLEMAS:
         print("\nEsta execução teve problema(s):\n- " + "\n- ".join(PROBLEMAS))
