@@ -43,15 +43,20 @@ A publicação exige conta profissional compatível, aplicativo Meta configurado
 
 O workflow `.github/workflows/robo.yml` executa o robô nos horários definidos em UTC, correspondentes aos horários de Brasília comentados no arquivo. Também pode ser iniciado manualmente em **Actions → Robô de achadinhos → Run workflow**.
 
-Os horários atuais de publicação são 11:47 e 19:47 (Brasília), com execuções de reserva. Ajuste os cron e `HORARIOS_POSTAGEM` em conjunto para manter a agenda sincronizada.
+O robô está configurado para tentar publicar 3 vídeos por dia, às 11:47, 15:47 e 19:47 (horário de Brasília). Cada horário tem uma execução de reserva uma hora depois. O contador diário impede que as reservas gerem vídeos extras.
 
 ## Testes
 
 O workflow `.github/workflows/ci.yml` executa verificações de sintaxe Python, integridade dos arquivos JSON e configuração padrão sem Google Flow em pushes e pull requests. Esses testes não publicam conteúdo nem validam credenciais externas da Shopee, Telegram ou Meta.
 
-## Limitações conhecidas
+## Plataformas e publicação automática
 
-- O WhatsApp é preparado como texto/link para compartilhamento; não há publicação automática no canal do WhatsApp neste projeto.
-- TikTok e YouTube Shorts não estão conectados por APIs de publicação neste repositório.
+- **Instagram:** publicação de Reels implementada; depende de conta profissional, permissões da Meta e `INSTAGRAM_TOKEN` válido.
+- **Telegram:** envio do vídeo ao chat e publicação de imagem/texto no canal implementados; depende de `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID` e permissões de administrador em `TELEGRAM_CANAL`.
+- **TikTok:** ainda não há cliente de publicação integrado. A automação exige app aprovado no TikTok for Developers, escopos de publicação e tokens OAuth; não basta adicionar um segredo genérico.
+- **YouTube Shorts:** ainda não há cliente de upload integrado. Exige OAuth 2.0 com acesso à YouTube Data API e canal autorizado.
+- **WhatsApp:** hoje o robô prepara o texto com links; não publica no canal. A API WhatsApp Business Cloud não equivale à publicação em Canais do WhatsApp e não oferece uma operação genérica para postar em um canal. Não será usado envio não oficial/automação de navegador.
+
+A configuração de três vídeos por dia controla a produção e as tentativas agendadas; não garante três publicações em todas as redes quando faltarem credenciais, permissões, produtos elegíveis ou quando uma API externa recusar o conteúdo.
 - A publicação no Telegram privado e no canal depende dos segredos e das permissões do bot.
 - A publicação no Instagram depende do token e da configuração da Meta.
