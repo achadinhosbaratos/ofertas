@@ -80,6 +80,7 @@ jobs:
           bot_text = Path("bot.py").read_text(encoding="utf-8")
           assert '("kit", "postar", "completo", "instagram", "youtube")' in bot_text, "Modo YouTube ausente"
           assert "def enviar_short_youtube(" in bot_text and "def rodar_youtube(" in bot_text, "Upload YouTube ausente"
+          assert "yt_ativo = bool(YT_CLIENT_ID and YT_CLIENT_SECRET and YT_REFRESH_TOKEN)" in bot_text, "Fila não considera credenciais do YouTube"
           workflow = Path(".github/workflows/robo.yml").read_text(encoding="utf-8")
           assert "YOUTUBE_CLIENT_ID" in workflow and "YOUTUBE_CLIENT_SECRET" in workflow and "YOUTUBE_REFRESH_TOKEN" in workflow
           print("OK: 3 vídeos/dia, cron e integração YouTube sincronizados")
