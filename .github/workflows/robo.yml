@@ -18,6 +18,7 @@ on:
 
 permissions:
   contents: write   # salvar histórico, ofertas e a fila do dia
+  actions: read     # recuperar artefatos temporários de execuções anteriores
   pages: write      # publicar a página de ofertas
   id-token: write
 
@@ -44,6 +45,19 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Recuperar vídeos pendentes de execução anterior
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p site/videos
+          RUN_ANTERIOR=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=videos-pendentes&per_page=100" \
+            --jq ".artifacts[] | select(.expired == false and .workflow_run.head_branch == \"$GITHUB_REF_NAME\") | .workflow_run.id" | head -n 1)
+          if [ -n "$RUN_ANTERIOR" ]; then
+            echo "Recuperando vídeos da execução $RUN_ANTERIOR"
+            gh run download "$RUN_ANTERIOR" --name videos-pendentes --dir site/videos
+          else
+            echo "Sem vídeos pendentes arquivados nesta branch."
+          fi
       - name: Instalar dependências
         run: |
           sudo apt-get update -qq
@@ -112,6 +126,18 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python bot.py youtube
 
+      - name: Limpar vídeos que não precisam de reenvio
+        if: always()
+        run: python bot.py limpar-videos
+
+      - name: Preservar MP4 pendentes por quatro dias
+        if: always() && hashFiles('site/videos/*.mp4') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: videos-pendentes
+          path: site/videos/*.mp4
+          retention-days: 4
+          compression-level: 0
       - name: Salvar a chave renovada do Instagram
         if: always()
         env:
