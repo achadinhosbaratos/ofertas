@@ -1,0 +1,84 @@
+name: Validação segura da release
+
+on:
+  pull_request:
+    branches:
+      - "gabriellwalter/Dio.desafio.github"
+  workflow_dispatch:
+
+# Não utiliza segredos, não faz deploy, não publica conteúdo e não grava no repositório.
+permissions:
+  contents: read
+
+jobs:
+  preparar-video-teste:
+    name: Gerar e armazenar MP4 de teste
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Criar MP4 sintético com FFmpeg
+        run: |
+          set -euo pipefail
+          mkdir -p site/videos
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i "color=c=black:s=160x284:r=5" -t 1 \
+            -an -c:v libx264 -pix_fmt yuv420p -movflags +faststart \
+            site/videos/video-validacao.mp4
+          test -s site/videos/video-validacao.mp4
+          sha256sum site/videos/video-validacao.mp4 > site/videos/SHA256SUMS
+      - name: Guardar o vídeo como artefato do Actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: videos-pendentes-validacao
+          path: site/videos/
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  restaurar-video-teste:
+    name: Restaurar MP4 em runner novo
+    needs: preparar-video-teste
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Recuperar o MP4 do job anterior
+        uses: actions/download-artifact@v4
+        with:
+          name: videos-pendentes-validacao
+          path: site/videos
+      - name: Verificar integridade e formato
+        run: |
+          set -euo pipefail
+          test -s site/videos/video-validacao.mp4
+          sha256sum --check site/videos/SHA256SUMS
+          ffprobe -v error -show_entries format=duration \
+            -of default=noprint_wrappers=1 site/videos/video-validacao.mp4
+          echo "MP4 recuperado com integridade entre runners distintos."
+
+  validar-configuracao:
+    name: Testar modos seguros e configuração
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar bibliotecas mínimas
+        run: python -m pip install requests pillow
+      - name: Regressões sem credenciais reais
+        run: python -m unittest discover -s tests -v
+      - name: Verificar referências de segredos no workflow
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          workflow = Path(".github/workflows/robo.yml").read_text(encoding="utf-8")
+          required = (
+              "SHOPEE_FEED_URL", "SHOPEE_APP_ID", "SHOPEE_SECRET",
+              "TELEGRAM_TOKEN", "TELEGRAM_CHAT_ID", "INSTAGRAM_TOKEN",
+              "YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN",
+          )
+          missing = [name for name in required if ("secrets." + name) not in workflow]
+          assert not missing, f"Faltam referências no workflow: {missing}"
+          print("Referências verificadas; a existência/validade dos segredos permanece não verificada.")
+          PY
