@@ -2,22 +2,23 @@ name: Robô de achadinhos
 
 on:
   schedule:
-    - cron: "47 10 * * *"   # 07:47 (Brasília): kit do dia no Telegram (fotos + texto pro Flow)
-    - cron: "47 11 * * *"   # 08:47: reserva do kit (só age se o das 07:47 não chegou)
-    - cron: "47 14 * * *"   # 11:47 (Brasília): monta e entrega o 1º vídeo
-    - cron: "47 15 * * *"   # 12:47: reserva (só posta se o das 11:47 não saiu)
-    - cron: "47 22 * * *"   # 19:47 (Brasília): monta e entrega o 2º vídeo
-    - cron: "47 23 * * *"   # 20:47: reserva (só posta se o das 19:47 não saiu)
+    - cron: "47 14 * * *"   # 11:47 (Brasília): 1º vídeo
+    - cron: "47 15 * * *"   # 12:47: reserva do 1º vídeo
+    - cron: "47 18 * * *"   # 15:47 (Brasília): 2º vídeo
+    - cron: "47 19 * * *"   # 16:47: reserva do 2º vídeo
+    - cron: "47 22 * * *"   # 19:47 (Brasília): 3º vídeo
+    - cron: "47 23 * * *"   # 20:47: reserva do 3º vídeo
   workflow_dispatch:         # botão "Run workflow" pra rodar na hora
     inputs:
       modo:
-        description: "postar = próximo vídeo do dia · kit = manda o kit de novo · completo = jeito antigo, sem Flow"
+        description: "postar = próximo vídeo do dia · completo = gera até 3 vídeos"
         type: choice
         default: postar
-        options: [postar, kit, completo]
+        options: [postar, completo]
 
 permissions:
   contents: write   # salvar histórico, ofertas e a fila do dia
+  actions: read     # recuperar artefatos temporários de execuções anteriores
   pages: write      # publicar a página de ofertas
   id-token: write
 
@@ -44,6 +45,19 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Recuperar vídeos pendentes de execução anterior
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p site/videos
+          RUN_ANTERIOR=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=videos-pendentes&per_page=100" \
+            --jq ".artifacts[] | select(.expired == false and .workflow_run.head_branch == \"$GITHUB_REF_NAME\") | .workflow_run.id" | head -n 1)
+          if [ -n "$RUN_ANTERIOR" ]; then
+            echo "Recuperando vídeos da execução $RUN_ANTERIOR"
+            gh run download "$RUN_ANTERIOR" --name videos-pendentes --dir site/videos
+          else
+            echo "Sem vídeos pendentes arquivados nesta branch."
+          fi
       - name: Instalar dependências
         run: |
           sudo apt-get update -qq
@@ -67,14 +81,14 @@ jobs:
           TELEGRAM_CANAL: ${{ secrets.TELEGRAM_CANAL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}   # IA do Google que escreve os roteiros
           INSTAGRAM_TOKEN: ${{ secrets.INSTAGRAM_TOKEN }}  # chave do Instagram (sem ela, não posta lá)
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
           ORIGEM: ${{ github.event_name }}                 # "schedule" = horário automático
         run: |
           MODO="${{ inputs.modo }}"
           if [ -z "$MODO" ]; then
-            case "${{ github.event.schedule }}" in
-              "47 10 * * *"|"47 11 * * *") MODO=kit ;;
-              *) MODO=postar ;;
-            esac
+            MODO=postar
           fi
           echo "Modo: $MODO"
           python bot.py "$MODO"
@@ -102,6 +116,28 @@ jobs:
           TEM_GH_PAT: ${{ secrets.GH_PAT_SEGREDOS != '' && 'sim' || '' }}
         run: python bot.py instagram
 
+      - name: Postar no YouTube Shorts
+        if: always()
+        env:
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python bot.py youtube
+
+      - name: Limpar vídeos que não precisam de reenvio
+        if: always()
+        run: python bot.py limpar-videos
+
+      - name: Preservar MP4 pendentes por quatro dias
+        if: always() && hashFiles('site/videos/*.mp4') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: videos-pendentes
+          path: site/videos/*.mp4
+          retention-days: 4
+          compression-level: 0
       - name: Salvar a chave renovada do Instagram
         if: always()
         env:
@@ -121,7 +157,12 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add historico.json ofertas.json fila.json redes.json 2>/dev/null || true
-          git commit -m "robô $(date +%F) $(date +%H:%M)" || echo "nada novo"
-          git pull --rebase --autostash || true
-          git push || echo "não deu pra salvar"
+          # git add -A aceita arquivos que ainda não existem e registra remoções.
+          git add -A -- '*.json'
+          if git diff --cached --quiet; then
+            echo "Histórico sem mudanças."
+          else
+            git commit -m "robô $(date +%F) $(date +%H:%M)"
+            git pull --rebase
+            git push
+          fi

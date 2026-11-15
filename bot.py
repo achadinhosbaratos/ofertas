@@ -8,11 +8,10 @@ Todo dia ele:
   2. pega os mais populares de algumas palavras-chave e acha uma opção
      parecida e bem mais barata;
   3. usa os seus links de afiliado que já vêm no feed;
-  4. monta um vídeo vertical (9:16) com narração;
-  5. manda o vídeo + legenda pronta pro seu Telegram
-     (e, se você tiver, posta a oferta no seu canal).
+  4. monta automaticamente um vídeo vertical (9:16) com narração;
+  5. publica a oferta nos canais configurados e prepara a página de ofertas.
 
-Você só precisa mexer na parte "CONFIGURAÇÃO" logo abaixo.
+O fluxo padrão não depende de clipes manuais do Google Flow.
 """
 
 import csv
@@ -56,7 +55,7 @@ PALAVRAS = [
     "kit facas cozinha",
 ]
 
-VIDEOS_POR_DIA = 2        # quantos vídeos por dia
+VIDEOS_POR_DIA = 3        # quantos vídeos por dia
 PRECO_MAXIMO = 150        # achadinho vende por impulso: acima desse preço o produto fica de fora (0 = sem limite)
 NOTA_MINIMA = 4.5         # nota mínima dos produtos (0 a 5)
 VENDAS_MINIMAS = 100      # vendas mínimas da opção barata (só no modo Open API)
@@ -93,16 +92,14 @@ VOZ = "pt-BR-FranciscaNeural"   # voz feminina; "pt-BR-AntonioNeural" é a mascu
 VELOCIDADE = "+8%"               # ritmo da narração ("+0%" normal, "+15%" mais rápido)
 RITMO_TELA_VERDE = "+15%"        # tela verde: fala mais rápida, como nos vídeos de afiliado que vendem
 
-# Clipes do Google Flow: de manhã o robô manda no Telegram as fotos e o texto pronto de cada produto;
-# você gera o clipe no Flow (celular) e manda de volta pro robô. Ele confere se o produto saiu igual
-# e usa o clipe em quase todo o vídeo: inteiro no começo, depois trechos dele com zoom, e a foto do
-# produto só no final, com a chamada. Se o clipe não chegar a tempo, o vídeo sai só com as fotos.
-USAR_FLOW = True
-MODELO_FLOW = "Omni 1.2 Flash"     # 24 créditos por clipe; o "Veo 3.1 - Lite" custa 10, mas erra mais o produto
+# Google Flow é opcional. Desligado por padrão para o robô não depender de uma etapa manual.
+# Se ativado, o sistema poderá usar clipes enviados pelo Telegram; sem clipe, monta com fotos.
+USAR_FLOW = False
+MODELO_FLOW = "Omni 1.2 Flash"
 CREDITOS_FLOW = 24
 # Horários dos vídeos (Brasília). Têm que bater com o robo.yml: lá também tem horários de reserva
 # (uma hora depois), que só postam se o horário de antes não rodou.
-HORARIOS_POSTAGEM = ["11:47", "19:47"]
+HORARIOS_POSTAGEM = ["11:47", "15:47", "19:47"]
 
 # Instagram: com o segredo INSTAGRAM_TOKEN, cada vídeo entregue vira um Reel no seu perfil (API oficial,
 # grátis). O robô renova a chave toda semana. Sem o segredo, nada muda.
@@ -130,6 +127,9 @@ TG_CANAL = os.environ.get("TELEGRAM_CANAL", "").strip()
 FEED_URLS = os.environ.get("SHOPEE_FEED_URL", "").split()
 AFILIADO_ID = os.environ.get("SHOPEE_AFFILIATE_ID", "").strip()   # seu ID de afiliado (painel da Shopee)
 IG_TOKEN = os.environ.get("INSTAGRAM_TOKEN", "").strip()
+YT_CLIENT_ID = os.environ.get("YOUTUBE_CLIENT_ID", "").strip()
+YT_CLIENT_SECRET = os.environ.get("YOUTUBE_CLIENT_SECRET", "").strip()
+YT_REFRESH_TOKEN = os.environ.get("YOUTUBE_REFRESH_TOKEN", "").strip()
 ORIGEM = os.environ.get("ORIGEM", "").strip()     # "schedule" quando é horário automático do robo.yml
 _repo = os.environ.get("GITHUB_REPOSITORY", "")          # "usuario/repositorio" quando roda no GitHub
 PAGINA_URL = (f"https://{_repo.split('/')[0]}.github.io/{_repo.split('/')[1]}/" if "/" in _repo else "")
@@ -139,8 +139,8 @@ METRICA = "vendidos"      # no modo feed vira "curtidas" (o feed não informa ve
 MODO_TESTE = "--teste" in sys.argv
 # kit = manda as fotos e o texto do Flow; postar = monta e entrega o próximo vídeo do dia;
 # completo = o jeito antigo (escolhe e monta tudo de uma vez, sem Flow);
-# instagram = posta no Instagram os vídeos já entregues (roda depois de publicar a página)
-MODO = next((a for a in sys.argv[1:] if a in ("kit", "postar", "completo", "instagram")), "completo")
+# instagram = posta Reels; youtube = envia Shorts já entregues (após publicar a página)
+MODO = next((a for a in sys.argv[1:] if a in ("kit", "postar", "completo", "instagram", "youtube", "limpar-videos")), "completo")
 PROBLEMAS = []     # o que deu errado nesta execução: no fim o robô sai com erro (o GitHub avisa por e-mail)
 
 
@@ -2889,8 +2889,11 @@ def rodar_postar():
     METRICA = fila.get("metrica", METRICA)
     pasta_dia = SAIDA / hoje.isoformat()
     pasta_dia.mkdir(parents=True, exist_ok=True)
-    receber_clipes(fila)
-    prontos = conferir_clipes(fila, pasta_dia) if USAR_FLOW else {}
+    if USAR_FLOW:
+        receber_clipes(fila)
+        prontos = conferir_clipes(fila, pasta_dia)
+    else:
+        prontos = {}
     salvar_fila(fila)                     # guarda os clipes recebidos mesmo se a montagem falhar
     pendentes = [it for it in fila["itens"] if it["status"] == "aguardando"]
     if not pendentes:
@@ -2899,7 +2902,8 @@ def rodar_postar():
     item = next((it for it in pendentes if it["numero"] in prontos), pendentes[0])
     clipe = prontos.get(item["numero"])
     rnd = random.Random(hoje.toordinal() * 10 + item["numero"])
-    print(f"> vídeo {item['numero']}: {item['titulo']} ({'com clipe do Flow' if clipe else 'só com fotos'})")
+    modo_video = "com clipe do Flow" if clipe else ("montagem automática com fotos" if not USAR_FLOW else "só com fotos")
+    print(f"> vídeo {item['numero']}: {item['titulo']} ({modo_video})")
     try:
         r = produzir_video(item, pasta_dia, rnd, clipe)
     except Exception as e:
@@ -3042,7 +3046,7 @@ _TG_FALSO = [1000]     # números de mensagem de mentira no modo teste
 
 def telegram(metodo, dados, arquivos=None):
     """Chama a API do Telegram e devolve o 'result' (ou None se deu erro)."""
-    if MODO_TESTE or not TG_TOKEN:
+    if MODO_TESTE:
         print(f"[telegram:{metodo}] {dados.get('caption') or dados.get('text', '')}"[:300])
         _TG_FALSO[0] += 1
         if metodo == "sendMediaGroup":
@@ -3050,6 +3054,9 @@ def telegram(metodo, dados, arquivos=None):
             _TG_FALSO[0] += n
             return [{"message_id": _TG_FALSO[0] - k} for k in range(n, 0, -1)]
         return {"message_id": _TG_FALSO[0]}
+    if not TG_TOKEN:
+        print("Telegram: TELEGRAM_TOKEN ausente; envio real não foi realizado.")
+        return None
     try:
         r = requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/{metodo}",
                           data=dados, files=arquivos, timeout=120)
@@ -3086,6 +3093,7 @@ def problema(texto):
 # ------------------------------------------------------------
 IG_API = "https://graph.instagram.com"
 IG_TENTATIVAS = 3
+PRAZO_REENVIO_DIAS = 2  # permite novas tentativas até dois dias depois da geração
 _IG_CHAVE = [IG_TOKEN]      # a chave em uso (muda se a renovação devolver outra)
 
 
@@ -3099,17 +3107,37 @@ def ler_redes():
 
 
 def salvar_redes(d):
-    d["posts"] = d["posts"][-60:]
+    # Mantém todos os pendentes mesmo que o histórico supere 60 registros.
+    posts = d["posts"]
+    concluidos = [
+        i for i, post in enumerate(posts)
+        if post.get("instagram") not in ("pendente", "erro")
+        and post.get("youtube") not in ("pendente", "erro")
+    ]
+    manter = set(concluidos[-60:])
+    d["posts"] = [
+        post for i, post in enumerate(posts)
+        if i in manter
+        or post.get("instagram") in ("pendente", "erro")
+        or post.get("youtube") in ("pendente", "erro")
+    ]
     REDES.write_text(json.dumps(d, ensure_ascii=False, indent=1))
 
 
 def agendar_redes(titulo, arquivo, legenda):
-    """Põe o vídeo entregue na fila do Instagram (o passo 'instagram' do robo.yml posta)."""
-    if not (POSTAR_INSTAGRAM and IG_TOKEN):
+    """Põe o vídeo na fila das redes que têm credenciais configuradas."""
+    ig_ativo = POSTAR_INSTAGRAM and bool(IG_TOKEN)
+    yt_ativo = bool(YT_CLIENT_ID and YT_CLIENT_SECRET and YT_REFRESH_TOKEN)
+    if not (ig_ativo or yt_ativo):
         return
     d = ler_redes()
-    d["posts"].append({"data": dt.date.today().isoformat(), "titulo": titulo, "arquivo": arquivo,
-                       "legenda": legenda, "instagram": "pendente", "tentativas": 0})
+    hoje = dt.date.today().isoformat()
+    if any(p.get("data") == hoje and p.get("arquivo") == arquivo for p in d["posts"]):
+        print(f"Redes: vídeo {arquivo} já está na fila, sem duplicar.")
+        return
+    d["posts"].append({"data": hoje, "titulo": titulo, "arquivo": arquivo,
+                       "legenda": legenda, "instagram": "pendente" if ig_ativo else "desligado",
+                       "youtube": "pendente" if yt_ativo else "desligado", "tentativas": 0})
     salvar_redes(d)
 
 
@@ -3219,11 +3247,15 @@ def rodar_instagram():
         print("Instagram: desligado (sem o segredo INSTAGRAM_TOKEN).")
         return
     d = ler_redes()
-    hoje = dt.date.today().isoformat()
+    hoje = dt.date.today()
     for x in d["posts"]:
         if x.get("instagram") not in ("pendente", "erro"):
             continue
-        if x["data"] != hoje or x.get("tentativas", 0) >= IG_TENTATIVAS:
+        try:
+            idade = (hoje - dt.date.fromisoformat(x["data"])).days
+        except (KeyError, ValueError, TypeError):
+            idade = PRAZO_REENVIO_DIAS + 1
+        if idade > PRAZO_REENVIO_DIAS or x.get("tentativas", 0) >= IG_TENTATIVAS:
             x["instagram"] = "desistiu"
             problema(f"Não consegui postar \"{x['titulo']}\" no Instagram "
                      f"({x.get('erro') or 'o vídeo já saiu da página'}). Poste esse à mão: o vídeo está no Telegram.")
@@ -3231,9 +3263,9 @@ def rodar_instagram():
         url = f"{PAGINA_URL}videos/{x['arquivo']}"
         x["tentativas"] = x.get("tentativas", 0) + 1
         if not PAGINA_URL or not video_no_ar(url, espera=300 if x["tentativas"] == 1 else 30):
-            x["instagram"] = "desistiu"     # a página é trocada a cada vídeo: esperar mais não adianta
-            problema(f"Não consegui postar \"{x['titulo']}\" no Instagram: o vídeo não apareceu na página de "
-                     "ofertas (a publicação da página falhou?). Poste esse à mão: o vídeo está no Telegram.")
+            x["instagram"] = "erro"
+            x["erro"] = "o vídeo ainda não está disponível no GitHub Pages"
+            problema(f"Instagram: \"{x['titulo']}\" não está na página. Tentarei novamente enquanto houver prazo.")
             continue
         print(f"Instagram: postando {x['titulo']}...")
         try:
@@ -3247,6 +3279,163 @@ def rodar_instagram():
         x.pop("erro", None)
         avisar(f"📸 Postado no Instagram: {x['titulo']}" + (f"\n{link}" if link else ""))
     cuidar_da_chave_ig(d)
+    salvar_redes(d)
+
+
+
+def renovar_token_youtube():
+    """Obtém access token curto usando refresh token OAuth armazenado nos Secrets."""
+    r = requests.post("https://oauth2.googleapis.com/token",
+        data={"client_id": YT_CLIENT_ID, "client_secret": YT_CLIENT_SECRET,
+              "refresh_token": YT_REFRESH_TOKEN, "grant_type": "refresh_token"}, timeout=30)
+    try:
+        dados = r.json()
+    except Exception:
+        raise RuntimeError(f"Google OAuth respondeu HTTP {r.status_code}") from None
+    if not r.ok or not dados.get("access_token"):
+        erro = dados.get("error_description") or dados.get("error") or f"HTTP {r.status_code}"
+        raise RuntimeError(f"não consegui renovar o token do YouTube ({erro})")
+    return dados["access_token"]
+
+
+def enviar_short_youtube(arquivo, titulo, legenda):
+    """Upload resumable e publicação pública; vídeos verticais elegíveis são classificados como Shorts."""
+    tamanho = arquivo.stat().st_size
+    if not tamanho:
+        raise RuntimeError("arquivo de vídeo vazio")
+    token = renovar_token_youtube()
+    metadados = {
+        "snippet": {"title": (titulo.strip() + " #Shorts")[:100],
+                    "description": (legenda or "").strip()[:5000],
+                    "categoryId": "26", "tags": ["shorts", "achadinhos", "ofertas", "shopee"]},
+        "status": {"privacyStatus": "public"},
+    }
+    inicio = requests.post("https://www.googleapis.com/upload/youtube/v3/videos",
+        params={"uploadType": "resumable", "part": "snippet,status"},
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json; charset=UTF-8",
+                 "X-Upload-Content-Type": "video/mp4", "X-Upload-Content-Length": str(tamanho)},
+        data=json.dumps(metadados, ensure_ascii=False).encode("utf-8"), timeout=60)
+    if not inicio.ok or not inicio.headers.get("Location"):
+        raise RuntimeError(f"YouTube não iniciou upload (HTTP {inicio.status_code}: {inicio.text[:400]})")
+    with arquivo.open("rb") as video:
+        envio = requests.put(inicio.headers["Location"], data=video,
+            headers={"Content-Type": "video/mp4", "Content-Length": str(tamanho)}, timeout=(60, 900))
+    try:
+        resposta = envio.json()
+    except Exception:
+        resposta = {}
+    if not envio.ok or not resposta.get("id"):
+        detalhe = resposta.get("error", {}).get("message") or envio.text[:400]
+        raise RuntimeError(f"YouTube recusou o vídeo (HTTP {envio.status_code}: {detalhe})")
+    video_id = resposta["id"]
+    return video_id, f"https://www.youtube.com/shorts/{video_id}"
+
+
+def recuperar_video_publicado(nome, destino):
+    """Recupera do Pages um MP4 publicado em uma execução anterior.
+
+    Alternativa ao artefato do GitHub Actions quando o runner foi reiniciado.
+    Só aceita nomes simples de MP4 para evitar acesso fora da pasta de vídeos.
+    """
+    if not PAGINA_URL or not isinstance(nome, str) or not nome.endswith(".mp4") or Path(nome).name != nome:
+        return False
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    temporario = destino.with_suffix(".download")
+    try:
+        url = PAGINA_URL.rstrip("/") + "/videos/" + urllib.parse.quote(nome)
+        with requests.get(url, timeout=(15, 120), stream=True) as resposta:
+            if not resposta.ok:
+                return False
+            tipo = resposta.headers.get("Content-Type", "").split(";")[0].lower()
+            if tipo not in ("video/mp4", "application/octet-stream", "binary/octet-stream"):
+                return False
+            total = 0
+            with temporario.open("wb") as arquivo:
+                for bloco in resposta.iter_content(chunk_size=1024 * 1024):
+                    if bloco:
+                        total += len(bloco)
+                        if total > 150 * 1024 * 1024:
+                            raise ValueError("MP4 excede o limite de 150 MiB")
+                        arquivo.write(bloco)
+        if total == 0:
+            return False
+        temporario.replace(destino)
+        print(f"Vídeo anterior recuperado do GitHub Pages: {nome}")
+        return True
+    except (requests.RequestException, OSError, ValueError) as exc:
+        print(f"Não consegui recuperar {nome}: {exc}")
+        return False
+    finally:
+        temporario.unlink(missing_ok=True)
+
+
+def limpar_videos_para_arquivo():
+    """Deixa no runner somente os MP4 que ainda precisam de publicação.
+
+    Usado depois das tentativas nas redes, antes de salvar artefato temporário.
+    Não apaga o que já foi implantado no GitHub Pages nesta execução.
+    """
+    pasta = SITE / "videos"
+    if not pasta.is_dir():
+        return
+    # Estado ilegível nunca pode causar exclusão de vídeos ainda não enviados.
+    if REDES.is_file():
+        dados = json.loads(REDES.read_text(encoding="utf-8"))
+    else:
+        dados = {"posts": []}
+    pendentes = {
+        x.get("arquivo") for x in dados.get("posts", [])
+        if x.get("instagram") in ("pendente", "erro")
+        or x.get("youtube") in ("pendente", "erro")
+    }
+    for arquivo in pasta.glob("*.mp4"):
+        if arquivo.name not in pendentes:
+            arquivo.unlink()
+            print(f"Arquivo local concluído/sem fila: {arquivo.name}")
+
+
+def rodar_youtube():
+    """Publica vídeos pendentes, inclusive de dias anteriores dentro do prazo de recuperação."""
+    if not (YT_CLIENT_ID and YT_CLIENT_SECRET and YT_REFRESH_TOKEN):
+        print("YouTube Shorts: desligado (configure YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET e YOUTUBE_REFRESH_TOKEN).")
+        return
+    d = ler_redes()
+    hoje = dt.date.today()
+    for x in d["posts"]:
+        if x.get("youtube") not in ("pendente", "erro"):
+            continue
+        try:
+            idade = (hoje - dt.date.fromisoformat(x["data"])).days
+        except (KeyError, ValueError, TypeError):
+            idade = PRAZO_REENVIO_DIAS + 1
+        if idade > PRAZO_REENVIO_DIAS or x.get("youtube_tentativas", 0) >= 3:
+            x["youtube"] = "desistiu"
+            problema(f"YouTube: prazo ou tentativas esgotadas para \"{x['titulo']}\". O vídeo continua no Telegram.")
+            continue
+        nome = x.get("arquivo")
+        if not isinstance(nome, str) or Path(nome).name != nome or not nome.endswith(".mp4"):
+            x["youtube"] = "desistiu"
+            problema(f"YouTube: nome de arquivo inválido na fila: {nome!r}")
+            continue
+        arquivo = SITE / "videos" / nome
+        if not arquivo.is_file() and not recuperar_video_publicado(nome, arquivo):
+            x["youtube"] = "erro"
+            x["youtube_erro"] = "vídeo não encontrado no arquivo local nem no GitHub Pages"
+            problema(f"YouTube: vídeo \"{x['titulo']}\" indisponível. Tentarei novamente mais tarde.")
+            continue
+        x["youtube_tentativas"] = x.get("youtube_tentativas", 0) + 1
+        print(f"YouTube Shorts: enviando {x['titulo']}...")
+        try:
+            video_id, link = enviar_short_youtube(arquivo, x["titulo"], x.get("legenda", ""))
+        except Exception as e:
+            x["youtube"] = "erro"
+            x["youtube_erro"] = str(e)[:500]
+            problema(f"YouTube: falha ao publicar \"{x['titulo']}\": {x['youtube_erro']}")
+            continue
+        x.update(youtube="postado", youtube_id=video_id, youtube_link=link,
+                 youtube_hora=dt.datetime.now().strftime("%H:%M"))
+        x.pop("youtube_erro", None)
+        avisar(f"YouTube Shorts publicado: {x['titulo']}\\n{link}")
     salvar_redes(d)
 
 
@@ -3637,6 +3826,9 @@ def fazer_comparativo(produtos, palavra, hist, pasta_dia, rnd, usar_feed, sub):
 
 def entregar_telegram(r):
     """Manda o vídeo pronto no seu chat. Devolve False se o vídeo não chegou: aí ele não conta como postado."""
+    if not MODO_TESTE and not (TG_TOKEN and TG_CHAT):
+        print("Telegram: faltam TELEGRAM_TOKEN e/ou TELEGRAM_CHAT_ID; vídeo não foi entregue.")
+        return False
     if TG_CHAT:
         with open(r["video"], "rb") as fv:
             chegou = telegram("sendVideo", {"chat_id": TG_CHAT, "caption": r["resumo"][:1000],
@@ -3691,7 +3883,11 @@ def preparar_busca():
 
 
 def main():
-    {"kit": rodar_kit, "postar": rodar_postar, "instagram": rodar_instagram}.get(MODO, rodar_completo)()
+    if MODO in ("postar", "completo") and not MODO_TESTE and not (TG_TOKEN and TG_CHAT):
+        print("Configuração inválida: configure TELEGRAM_TOKEN e TELEGRAM_CHAT_ID para publicar.", file=sys.stderr)
+        sys.exit(1)
+    {"kit": rodar_kit, "postar": rodar_postar, "instagram": rodar_instagram,
+     "youtube": rodar_youtube, "limpar-videos": limpar_videos_para_arquivo}.get(MODO, rodar_completo)()
     if PROBLEMAS:
         print("\nEsta execução teve problema(s):\n- " + "\n- ".join(PROBLEMAS))
         sys.exit(1)

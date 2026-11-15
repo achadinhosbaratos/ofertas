@@ -1,0 +1,93 @@
+name: Verificações do robô
+
+on:
+  push:
+    branches:
+      - "codex/**"
+  pull_request:
+    branches:
+      - "**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar bibliotecas para testes
+        run: python -m pip install requests pillow
+      - name: Verificar sintaxe Python
+        run: python -m py_compile bot.py
+      - name: Testar regressões
+        run: python -m unittest discover -s tests -v
+      - name: Validar JSONs versionados
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          for name in ("fila.json", "historico.json", "ofertas.json"):
+              path = Path(name)
+              if path.exists():
+                  with path.open(encoding="utf-8") as f:
+                      json.load(f)
+                  print(f"OK: {name}")
+          PY
+      - name: Confirmar que o Flow manual está desligado por padrão
+        run: |
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          tree = ast.parse(Path("bot.py").read_text(encoding="utf-8"))
+          values = [
+              node.value
+              for node in tree.body
+              if isinstance(node, ast.Assign)
+              and any(isinstance(target, ast.Name) and target.id == "USAR_FLOW"
+                      for target in node.targets)
+          ]
+          assert values, "Configuração USAR_FLOW não encontrada"
+          assert isinstance(values[-1], ast.Constant) and values[-1].value is False, (
+              "USAR_FLOW deve permanecer False por padrão para manter a automação sem etapa manual"
+          )
+          print("OK: Google Flow desativado por padrão")
+          PY
+      - name: Validar meta de três vídeos e horários
+        run: |
+          python - <<'PY'
+          import ast
+          import re
+          from pathlib import Path
+
+          tree = ast.parse(Path("bot.py").read_text(encoding="utf-8"))
+          values = {}
+          for node in tree.body:
+              if isinstance(node, ast.Assign):
+                  for target in node.targets:
+                      if isinstance(target, ast.Name) and target.id in {"VIDEOS_POR_DIA", "HORARIOS_POSTAGEM"}:
+                          values[target.id] = ast.literal_eval(node.value)
+          assert values.get("VIDEOS_POR_DIA") == 3, "VIDEOS_POR_DIA deve ser 3"
+          assert values.get("HORARIOS_POSTAGEM") == ["11:47", "15:47", "19:47"], "Horários devem ser 11:47, 15:47 e 19:47"
+          workflow = Path(".github/workflows/robo.yml").read_text(encoding="utf-8")
+          crons = re.findall(r'cron:\s*"([^"]+)"', workflow)
+          esperados = {"47 14 * * *", "47 15 * * *", "47 18 * * *", "47 19 * * *", "47 22 * * *", "47 23 * * *"}
+          assert esperados.issubset(set(crons)), f"Faltam cron principal/reserva: {esperados - set(crons)}"
+          bot_text = Path("bot.py").read_text(encoding="utf-8")
+          assert '"limpar-videos"' in bot_text, "Modo de retenção de arquivos ausente"
+          assert "def enviar_short_youtube(" in bot_text and "def rodar_youtube(" in bot_text, "Upload YouTube ausente"
+          assert "yt_ativo = bool(YT_CLIENT_ID and YT_CLIENT_SECRET and YT_REFRESH_TOKEN)" in bot_text, "Fila não considera credenciais do YouTube"
+          workflow = Path(".github/workflows/robo.yml").read_text(encoding="utf-8")
+          assert "YOUTUBE_CLIENT_ID" in workflow and "YOUTUBE_CLIENT_SECRET" in workflow and "YOUTUBE_REFRESH_TOKEN" in workflow
+          print("OK: 3 vídeos/dia, cron e integração YouTube sincronizados")
+          PY
+      - name: Verificar whitespace
+        run: git diff --check
