@@ -77,7 +77,12 @@ jobs:
           crons = re.findall(r'cron:\s*"([^"]+)"', workflow)
           esperados = {"47 14 * * *", "47 15 * * *", "47 18 * * *", "47 19 * * *", "47 22 * * *", "47 23 * * *"}
           assert esperados.issubset(set(crons)), f"Faltam cron principal/reserva: {esperados - set(crons)}"
-          print("OK: 3 vídeos/dia, horários e reservas sincronizados")
+          bot_text = Path("bot.py").read_text(encoding="utf-8")
+          assert '("kit", "postar", "completo", "instagram", "youtube")' in bot_text, "Modo YouTube ausente"
+          assert "def enviar_short_youtube(" in bot_text and "def rodar_youtube(" in bot_text, "Upload YouTube ausente"
+          workflow = Path(".github/workflows/robo.yml").read_text(encoding="utf-8")
+          assert "YOUTUBE_CLIENT_ID" in workflow and "YOUTUBE_CLIENT_SECRET" in workflow and "YOUTUBE_REFRESH_TOKEN" in workflow
+          print("OK: 3 vídeos/dia, cron e integração YouTube sincronizados")
           PY
       - name: Verificar whitespace
         run: git diff --check
