@@ -131,7 +131,12 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add historico.json ofertas.json fila.json redes.json 2>/dev/null || true
-          git commit -m "robô $(date +%F) $(date +%H:%M)" || echo "nada novo"
-          git pull --rebase --autostash || true
-          git push || echo "não deu pra salvar"
+          # git add -A aceita arquivos que ainda não existem e registra remoções.
+          git add -A -- '*.json'
+          if git diff --cached --quiet; then
+            echo "Histórico sem mudanças."
+          else
+            git commit -m "robô $(date +%F) $(date +%H:%M)"
+            git pull --rebase
+            git push
+          fi
