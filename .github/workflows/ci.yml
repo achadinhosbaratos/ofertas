@@ -57,5 +57,27 @@ jobs:
           )
           print("OK: Google Flow desativado por padrão")
           PY
+      - name: Validar meta de três vídeos e horários
+        run: |
+          python - <<'PY'
+          import ast
+          import re
+          from pathlib import Path
+
+          tree = ast.parse(Path("bot.py").read_text(encoding="utf-8"))
+          values = {}
+          for node in tree.body:
+              if isinstance(node, ast.Assign):
+                  for target in node.targets:
+                      if isinstance(target, ast.Name) and target.id in {"VIDEOS_POR_DIA", "HORARIOS_POSTAGEM"}:
+                          values[target.id] = ast.literal_eval(node.value)
+          assert values.get("VIDEOS_POR_DIA") == 3, "VIDEOS_POR_DIA deve ser 3"
+          assert values.get("HORARIOS_POSTAGEM") == ["11:47", "15:47", "19:47"], "Horários devem ser 11:47, 15:47 e 19:47"
+          workflow = Path(".github/workflows/robo.yml").read_text(encoding="utf-8")
+          crons = re.findall(r'cron:\\s*"([^"]+)"', workflow)
+          esperados = {"47 14 * * *", "47 15 * * *", "47 18 * * *", "47 19 * * *", "47 22 * * *", "47 23 * * *"}
+          assert esperados.issubset(set(crons)), f"Faltam cron principal/reserva: {esperados - set(crons)}"
+          print("OK: 3 vídeos/dia, horários e reservas sincronizados")
+          PY
       - name: Verificar whitespace
         run: git diff --check
