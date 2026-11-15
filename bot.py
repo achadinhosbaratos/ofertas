@@ -127,6 +127,9 @@ TG_CANAL = os.environ.get("TELEGRAM_CANAL", "").strip()
 FEED_URLS = os.environ.get("SHOPEE_FEED_URL", "").split()
 AFILIADO_ID = os.environ.get("SHOPEE_AFFILIATE_ID", "").strip()   # seu ID de afiliado (painel da Shopee)
 IG_TOKEN = os.environ.get("INSTAGRAM_TOKEN", "").strip()
+YT_CLIENT_ID = os.environ.get("YOUTUBE_CLIENT_ID", "").strip()
+YT_CLIENT_SECRET = os.environ.get("YOUTUBE_CLIENT_SECRET", "").strip()
+YT_REFRESH_TOKEN = os.environ.get("YOUTUBE_REFRESH_TOKEN", "").strip()
 ORIGEM = os.environ.get("ORIGEM", "").strip()     # "schedule" quando é horário automático do robo.yml
 _repo = os.environ.get("GITHUB_REPOSITORY", "")          # "usuario/repositorio" quando roda no GitHub
 PAGINA_URL = (f"https://{_repo.split('/')[0]}.github.io/{_repo.split('/')[1]}/" if "/" in _repo else "")
@@ -136,8 +139,8 @@ METRICA = "vendidos"      # no modo feed vira "curtidas" (o feed não informa ve
 MODO_TESTE = "--teste" in sys.argv
 # kit = manda as fotos e o texto do Flow; postar = monta e entrega o próximo vídeo do dia;
 # completo = o jeito antigo (escolhe e monta tudo de uma vez, sem Flow);
-# instagram = posta no Instagram os vídeos já entregues (roda depois de publicar a página)
-MODO = next((a for a in sys.argv[1:] if a in ("kit", "postar", "completo", "instagram")), "completo")
+# instagram = posta Reels; youtube = envia Shorts já entregues (após publicar a página)
+MODO = next((a for a in sys.argv[1:] if a in ("kit", "postar", "completo", "instagram", "youtube")), "completo")
 PROBLEMAS = []     # o que deu errado nesta execução: no fim o robô sai com erro (o GitHub avisa por e-mail)
 
 
@@ -3251,6 +3254,91 @@ def rodar_instagram():
     salvar_redes(d)
 
 
+
+def renovar_token_youtube():
+    """Obtém access token curto usando refresh token OAuth armazenado nos Secrets."""
+    r = requests.post("https://oauth2.googleapis.com/token",
+        data={"client_id": YT_CLIENT_ID, "client_secret": YT_CLIENT_SECRET,
+              "refresh_token": YT_REFRESH_TOKEN, "grant_type": "refresh_token"}, timeout=30)
+    try:
+        dados = r.json()
+    except Exception:
+        raise RuntimeError(f"Google OAuth respondeu HTTP {r.status_code}") from None
+    if not r.ok or not dados.get("access_token"):
+        erro = dados.get("error_description") or dados.get("error") or f"HTTP {r.status_code}"
+        raise RuntimeError(f"não consegui renovar o token do YouTube ({erro})")
+    return dados["access_token"]
+
+
+def enviar_short_youtube(arquivo, titulo, legenda):
+    """Upload resumable e publicação pública; vídeos verticais elegíveis são classificados como Shorts."""
+    tamanho = arquivo.stat().st_size
+    if not tamanho:
+        raise RuntimeError("arquivo de vídeo vazio")
+    token = renovar_token_youtube()
+    metadados = {
+        "snippet": {"title": (titulo.strip() + " #Shorts")[:100],
+                    "description": (legenda or "").strip()[:5000],
+                    "categoryId": "26", "tags": ["shorts", "achadinhos", "ofertas", "shopee"]},
+        "status": {"privacyStatus": "public"},
+    }
+    inicio = requests.post("https://www.googleapis.com/upload/youtube/v3/videos",
+        params={"uploadType": "resumable", "part": "snippet,status"},
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json; charset=UTF-8",
+                 "X-Upload-Content-Type": "video/mp4", "X-Upload-Content-Length": str(tamanho)},
+        data=json.dumps(metadados, ensure_ascii=False).encode("utf-8"), timeout=60)
+    if not inicio.ok or not inicio.headers.get("Location"):
+        raise RuntimeError(f"YouTube não iniciou upload (HTTP {inicio.status_code}: {inicio.text[:400]})")
+    with arquivo.open("rb") as video:
+        envio = requests.put(inicio.headers["Location"], data=video,
+            headers={"Content-Type": "video/mp4", "Content-Length": str(tamanho)}, timeout=(60, 900))
+    try:
+        resposta = envio.json()
+    except Exception:
+        resposta = {}
+    if not envio.ok or not resposta.get("id"):
+        detalhe = resposta.get("error", {}).get("message") or envio.text[:400]
+        raise RuntimeError(f"YouTube recusou o vídeo (HTTP {envio.status_code}: {detalhe})")
+    video_id = resposta["id"]
+    return video_id, f"https://www.youtube.com/shorts/{video_id}"
+
+
+def rodar_youtube():
+    """Publica vídeos do dia no YouTube; não duplica itens já marcados como postados."""
+    if not (YT_CLIENT_ID and YT_CLIENT_SECRET and YT_REFRESH_TOKEN):
+        print("YouTube Shorts: desligado (configure YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET e YOUTUBE_REFRESH_TOKEN).")
+        return
+    d = ler_redes()
+    hoje = dt.date.today().isoformat()
+    for x in d["posts"]:
+        if x.get("youtube") not in ("pendente", "erro") or x.get("data") != hoje:
+            continue
+        x["youtube_tentativas"] = x.get("youtube_tentativas", 0) + 1
+        arquivo = SITE / "videos" / x["arquivo"]
+        if x["youtube_tentativas"] > 3:
+            x["youtube"] = "desistiu"
+            problema(f"YouTube: esgotei tentativas para \"{x['titulo']}\". O vídeo continua no Telegram.")
+            continue
+        if not arquivo.is_file():
+            x["youtube"] = "erro"
+            x["youtube_erro"] = "arquivo não encontrado em site/videos"
+            problema(f"YouTube: não encontrei o vídeo \"{x['titulo']}\" para upload.")
+            continue
+        print(f"YouTube Shorts: enviando {x['titulo']}...")
+        try:
+            video_id, link = enviar_short_youtube(arquivo, x["titulo"], x.get("legenda", ""))
+        except Exception as e:
+            x["youtube"] = "erro"
+            x["youtube_erro"] = str(e)[:500]
+            problema(f"YouTube: falha ao publicar \"{x['titulo']}\": {x['youtube_erro']}")
+            continue
+        x.update(youtube="postado", youtube_id=video_id, youtube_link=link,
+                 youtube_hora=dt.datetime.now().strftime("%H:%M"))
+        x.pop("youtube_erro", None)
+        avisar(f"YouTube Shorts publicado: {x['titulo']}\\n{link}")
+    salvar_redes(d)
+
+
 # ------------------------------------------------------------
 # Página de ofertas (link da bio)
 # ------------------------------------------------------------
@@ -3692,7 +3780,7 @@ def preparar_busca():
 
 
 def main():
-    {"kit": rodar_kit, "postar": rodar_postar, "instagram": rodar_instagram}.get(MODO, rodar_completo)()
+    {"kit": rodar_kit, "postar": rodar_postar, "instagram": rodar_instagram, "youtube": rodar_youtube}.get(MODO, rodar_completo)()
     if PROBLEMAS:
         print("\nEsta execução teve problema(s):\n- " + "\n- ".join(PROBLEMAS))
         sys.exit(1)
