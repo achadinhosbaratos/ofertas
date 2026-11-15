@@ -3107,7 +3107,20 @@ def ler_redes():
 
 
 def salvar_redes(d):
-    d["posts"] = d["posts"][-60:]
+    # Mantém todos os pendentes mesmo que o histórico supere 60 registros.
+    posts = d["posts"]
+    concluidos = [
+        i for i, post in enumerate(posts)
+        if post.get("instagram") not in ("pendente", "erro")
+        and post.get("youtube") not in ("pendente", "erro")
+    ]
+    manter = set(concluidos[-60:])
+    d["posts"] = [
+        post for i, post in enumerate(posts)
+        if i in manter
+        or post.get("instagram") in ("pendente", "erro")
+        or post.get("youtube") in ("pendente", "erro")
+    ]
     REDES.write_text(json.dumps(d, ensure_ascii=False, indent=1))
 
 
@@ -3365,8 +3378,13 @@ def limpar_videos_para_arquivo():
     pasta = SITE / "videos"
     if not pasta.is_dir():
         return
+    # Estado ilegível nunca pode causar exclusão de vídeos ainda não enviados.
+    if REDES.is_file():
+        dados = json.loads(REDES.read_text(encoding="utf-8"))
+    else:
+        dados = {"posts": []}
     pendentes = {
-        x.get("arquivo") for x in ler_redes().get("posts", [])
+        x.get("arquivo") for x in dados.get("posts", [])
         if x.get("instagram") in ("pendente", "erro")
         or x.get("youtube") in ("pendente", "erro")
     }
@@ -3394,8 +3412,13 @@ def rodar_youtube():
             x["youtube"] = "desistiu"
             problema(f"YouTube: prazo ou tentativas esgotadas para \"{x['titulo']}\". O vídeo continua no Telegram.")
             continue
-        arquivo = SITE / "videos" / x["arquivo"]
-        if not arquivo.is_file() and not recuperar_video_publicado(x["arquivo"], arquivo):
+        nome = x.get("arquivo")
+        if not isinstance(nome, str) or Path(nome).name != nome or not nome.endswith(".mp4"):
+            x["youtube"] = "desistiu"
+            problema(f"YouTube: nome de arquivo inválido na fila: {nome!r}")
+            continue
+        arquivo = SITE / "videos" / nome
+        if not arquivo.is_file() and not recuperar_video_publicado(nome, arquivo):
             x["youtube"] = "erro"
             x["youtube_erro"] = "vídeo não encontrado no arquivo local nem no GitHub Pages"
             problema(f"YouTube: vídeo \"{x['titulo']}\" indisponível. Tentarei novamente mais tarde.")
