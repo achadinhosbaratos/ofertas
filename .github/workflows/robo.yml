@@ -99,6 +99,16 @@ jobs:
           TEM_GH_PAT: ${{ secrets.GH_PAT_SEGREDOS != '' && 'sim' || '' }}
         run: python bot.py instagram
 
+      - name: Postar no YouTube Shorts
+        if: always()
+        env:
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python bot.py youtube
+
       - name: Salvar a chave renovada do Instagram
         if: always()
         env:
