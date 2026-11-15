@@ -3108,12 +3108,15 @@ def salvar_redes(d):
 
 
 def agendar_redes(titulo, arquivo, legenda):
-    """Põe o vídeo entregue na fila do Instagram (o passo 'instagram' do robo.yml posta)."""
-    if not (POSTAR_INSTAGRAM and IG_TOKEN):
+    """Põe o vídeo na fila das redes que têm credenciais configuradas."""
+    ig_ativo = POSTAR_INSTAGRAM and bool(IG_TOKEN)
+    yt_ativo = bool(YT_CLIENT_ID and YT_CLIENT_SECRET and YT_REFRESH_TOKEN)
+    if not (ig_ativo or yt_ativo):
         return
     d = ler_redes()
     d["posts"].append({"data": dt.date.today().isoformat(), "titulo": titulo, "arquivo": arquivo,
-                       "legenda": legenda, "instagram": "pendente", "tentativas": 0})
+                       "legenda": legenda, "instagram": "pendente" if ig_ativo else "desligado",
+                       "youtube": "pendente" if yt_ativo else "desligado", "tentativas": 0})
     salvar_redes(d)
 
 
