@@ -9,6 +9,7 @@ on:
 # Não utiliza segredos, não faz deploy, não publica conteúdo e não grava no repositório.
 permissions:
   contents: read
+  actions: read
 
 jobs:
   preparar-video-teste:
@@ -45,11 +46,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Recuperar o MP4 do job anterior
-        uses: actions/download-artifact@v4
-        with:
-          name: videos-pendentes-validacao
-          path: site/videos
+      - name: Recuperar MP4 pelo mesmo mecanismo usado em produção
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p site/videos
+          RUN_ANTERIOR=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=videos-pendentes-validacao&per_page=100" \
+            --jq ".artifacts[] | select(.expired == false and .workflow_run.head_branch == \"$BRANCH\" and .workflow_run.id != $GITHUB_RUN_ID) | .workflow_run.id" | head -n 1)
+          if [ -z "$RUN_ANTERIOR" ]; then
+            echo "Nenhuma execução anterior com artefatos; verificando download desta própria execução."
+            RUN_ANTERIOR="$GITHUB_RUN_ID"
+          else
+            echo "VALIDACAO_ENTRE_EXECUCOES: recuperando run $RUN_ANTERIOR (atual $GITHUB_RUN_ID)"
+          fi
+          gh run download "$RUN_ANTERIOR" --name videos-pendentes-validacao --dir site/videos
       - name: Instalar FFmpeg no runner
         run: |
           sudo apt-get update -qq
