@@ -27,6 +27,9 @@ Em **Settings → Secrets and variables → Actions**, configure os segredos apl
 | `TELEGRAM_CANAL` | Opcional: @username ou ID do canal público |
 | `GEMINI_API_KEY` | Opcional: roteiros com Gemini |
 | `INSTAGRAM_TOKEN` | Opcional: publicação automática de Reels |
+| `YOUTUBE_CLIENT_ID` | OAuth do Google para upload automático de Shorts |
+| `YOUTUBE_CLIENT_SECRET` | Segredo OAuth do Google |
+| `YOUTUBE_REFRESH_TOKEN` | Refresh token OAuth com escopo `youtube.upload` e acesso offline |
 | `GH_PAT_SEGREDOS` | Opcional: atualizar o segredo do Instagram após renovação |
 
 Nunca coloque tokens ou chaves diretamente no código, issues ou logs.
@@ -53,8 +56,8 @@ O workflow `.github/workflows/ci.yml` executa verificações de sintaxe Python, 
 
 - **Instagram:** publicação de Reels implementada; depende de conta profissional, permissões da Meta e `INSTAGRAM_TOKEN` válido.
 - **Telegram:** envio do vídeo ao chat e publicação de imagem/texto no canal implementados; depende de `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID` e permissões de administrador em `TELEGRAM_CANAL`.
-- **TikTok:** ainda não há cliente de publicação integrado. A automação exige app aprovado no TikTok for Developers, escopos de publicação e tokens OAuth; não basta adicionar um segredo genérico.
-- **YouTube Shorts:** ainda não há cliente de upload integrado. Exige OAuth 2.0 com acesso à YouTube Data API e canal autorizado.
+- **TikTok:** a publicação direta exige Content Posting API, escopo `video.publish`, OAuth e auditoria para sair do modo privado. As diretrizes exigem que a aplicação mostre as opções atuais de privacidade/interação e recolha consentimento antes de publicar; um job headless do GitHub Actions não cumpre esse fluxo sem uma interface de confirmação. Por isso, não será ativada publicação silenciosa que viole as regras da plataforma.
+- **YouTube Shorts:** upload resumable e publicação pública implementados. Configure `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET` e `YOUTUBE_REFRESH_TOKEN` (OAuth com escopo `youtube.upload` e acesso offline). Projetos não auditados podem ter uploads limitados à visualização privada; a auditoria do Google é necessária para liberar publicação pública.
 - **WhatsApp:** hoje o robô prepara o texto com links; não publica no canal. A API WhatsApp Business Cloud não equivale à publicação em Canais do WhatsApp e não oferece uma operação genérica para postar em um canal. Não será usado envio não oficial/automação de navegador.
 
 A configuração de três vídeos por dia controla a produção e as tentativas agendadas; não garante três publicações em todas as redes quando faltarem credenciais, permissões, produtos elegíveis ou quando uma API externa recusar o conteúdo.
