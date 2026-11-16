@@ -9,7 +9,7 @@ Automação para selecionar ofertas do feed de afiliados Shopee, gerar vídeos v
 3. Gera vídeos 9:16 com imagens, textos e narração em português.
 4. Envia o vídeo e a legenda para o chat privado do Telegram.
 5. Atualiza a página de ofertas no GitHub Pages.
-6. Se o Instagram estiver configurado, publica o vídeo como Reel pela API oficial da Meta.
+6. Se o Instagram estiver configurado **e a publicação estiver explicitamente ativada**, publica o vídeo como Reel pela API oficial da Meta.
 
 **Google Flow está desativado por padrão.** O vídeo é montado automaticamente pelo próprio robô; não é necessário gerar ou devolver clipes manualmente.
 
@@ -38,9 +38,22 @@ Nunca coloque tokens ou chaves diretamente no código, issues ou logs.
 
 O bot precisa estar iniciado e ter acesso ao chat privado indicado em `TELEGRAM_CHAT_ID`. Para publicar em um canal, adicione o bot como administrador com permissão de publicar mensagens. Um erro 403 no canal não é resolvido alterando o código: é preciso corrigir a associação/permissão do bot no próprio Telegram.
 
-### Instagram
+### Instagram — novo Unified Login (SUAT)
 
-A publicação exige conta profissional compatível, aplicativo Meta configurado e token válido com as permissões necessárias. Sem `INSTAGRAM_TOKEN`, o robô mantém a geração de vídeos e a página, mas não publica Reels. A configuração do token é externa ao repositório.
+A publicação exige conta profissional, app Meta e token com as permissões `instagram_basic` e `instagram_content_publish` para a conta de Instagram conectada.
+
+1. Na Meta, configure o login unificado e gere o token no seu próprio app. **Nunca envie esse token em mensagens ou screenshots.**
+2. Em **GitHub → Settings → Secrets and variables → Actions → Secrets**, crie `INSTAGRAM_TOKEN` com o valor do token. Se já existir, atualize. Confirme se ele deve ser um segredo do repositório ou do ambiente `github-pages` (este tem precedência se o job usa esse ambiente).
+3. Na aba **Variables**, crie `INSTAGRAM_AUTH_MODE` = `unified` e `INSTAGRAM_USER_ID` com o ID numérico da conta profissional exibido no painel da Meta (não é o App ID).
+4. Deixe `INSTAGRAM_PUBLICAR` **ausente** ou igual a `nao`. Assim o robô **não posta** enquanto você valida a autenticação.
+5. Em **Actions → Homologar integrações (sem publicar)** execute o workflow. Ele testa a leitura do perfil com `graph.facebook.com/v27.0`, sem enviar Reels nem mensagens.
+6. Somente após validação e autorização para publicar, altere a variável `INSTAGRAM_PUBLICAR` para `sim`. Não ative antes da aprovação da alteração de código.
+
+**Token SUAT:** usa a Graph API do Facebook (`graph.facebook.com`) e não usa `ig_refresh_token`. O robô **não tenta renovar automaticamente** o token Unified Login, pois seu ciclo de vida difere do token legado; acompanhe a situação no painel da Meta.
+
+**Token legado:** mantenha `INSTAGRAM_AUTH_MODE=instagram` para utilizar `graph.instagram.com`; a renovação de 60 dias continua aplicável somente a esse modo.
+
+A verificação de leitura do perfil não comprova as permissões de publicação. A primeira publicação real ainda precisa de validação controlada.
 
 ## Agendamento
 
@@ -54,7 +67,7 @@ O workflow `.github/workflows/ci.yml` executa verificações de sintaxe Python, 
 
 ## Plataformas e publicação automática
 
-- **Instagram:** publicação de Reels implementada; depende de conta profissional, permissões da Meta e `INSTAGRAM_TOKEN` válido.
+- **Instagram:** publicação de Reels implementada; depende de conta profissional, permissões da Meta, `INSTAGRAM_TOKEN` válido e ativação explícita por `INSTAGRAM_PUBLICAR=sim`.
 - **Telegram:** envio do vídeo ao chat e publicação de imagem/texto no canal implementados; depende de `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID` e permissões de administrador em `TELEGRAM_CANAL`.
 - **TikTok:** a publicação direta exige Content Posting API, escopo `video.publish`, OAuth e auditoria para sair do modo privado. As diretrizes exigem que a aplicação mostre as opções atuais de privacidade/interação e recolha consentimento antes de publicar; um job headless do GitHub Actions não cumpre esse fluxo sem uma interface de confirmação. Por isso, não será ativada publicação silenciosa que viole as regras da plataforma.
 - **YouTube Shorts:** upload resumable e publicação pública implementados. Configure `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET` e `YOUTUBE_REFRESH_TOKEN` (OAuth com escopo `youtube.upload` e acesso offline). Projetos não auditados podem ter uploads limitados à visualização privada; a auditoria do Google é necessária para liberar publicação pública. Para OAuth, não deixe a tela de consentimento externa em **Testing** para operação contínua: tokens de atualização emitidos nesse modo expiram em 7 dias. Publique/configure o app para produção e conclua as verificações exigidas pelo Google.
