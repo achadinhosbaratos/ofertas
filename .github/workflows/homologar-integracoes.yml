@@ -159,7 +159,12 @@ jobs:
                   else:
                       report("Instagram", "FALHOU", "consulta de perfil não autorizada " + state)
           else:
-              report("Instagram", "IGNORADO", "token opcional não configurado")
+              # No modo unified o usuário solicitou explicitamente a integração.
+              # Token ausente NÃO pode produzir uma homologação verde enganosa.
+              if ig_mode == "unified":
+                  report("Instagram", "FALHOU", "INSTAGRAM_TOKEN não disponível neste job")
+              else:
+                  report("Instagram", "IGNORADO", "token opcional não configurado")
 
           youtube = [env(k) for k in ("YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN")]
           if all(youtube):
