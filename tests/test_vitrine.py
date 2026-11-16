@@ -71,6 +71,18 @@ class VitrineTests(unittest.TestCase):
         self.assertIn("Preço registrado em 15/11/2026", page)
         self.assertIn("podem mudar sem aviso", page)
 
+    def test_favorites_navigation_resets_previous_filters(self):
+        """A aba Favoritos não pode depender da categoria ou busca anterior."""
+        from pathlib import Path
+        script = (Path(__file__).resolve().parents[1] / "vitrine.js").read_text(encoding="utf-8")
+        self.assertIn('category = "Todas";', script)
+        self.assertIn("const activating = !onlyFavorites;", script)
+        self.assertIn('search.value = "";', script)
+        self.assertIn('price.value = "";', script)
+        self.assertIn('discount.value = "";', script)
+        self.assertIn("onlyFavorites = false;", script)
+        self.assertIn("Você ainda não salvou favoritos.", script)
+
     def test_shopee_url_whitelist(self):
         self.assertEqual(safe_shopee("http://shopee.com.br/a"), "")
         self.assertEqual(safe_shopee("https://not-shopee.com.br/a"), "")
