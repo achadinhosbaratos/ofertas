@@ -1,0 +1,45 @@
+name: Preview do site - Ofertas Explosivas
+
+on:
+  pull_request:
+    paths:
+      - "bot.py"
+      - "vitrine.py"
+      - "vitrine.css"
+      - "vitrine.js"
+      - "tests/test_vitrine.py"
+      - ".github/workflows/preview-site-v2.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validar a vitrine
+        run: python -m unittest discover -s tests -p test_vitrine.py -v
+      - name: Gerar HTML com as ofertas reais do repositório
+        run: python vitrine.py --source ofertas.json --output preview-site/index.html
+      - name: Validar integridade da prévia
+        run: |
+          test -s preview-site/index.html
+          python - <<'PY'
+          from pathlib import Path
+          page = Path("preview-site/index.html").read_text(encoding="utf-8")
+          assert "Mini Processador" in page or "Mini processador" in page
+          assert 'id="cards"' in page
+          assert 'id="busca"' in page
+          assert 'id="ordenar"' in page
+          assert 'class="share-item"' in page
+          print("PRÉVIA HTML: OK. Nenhuma publicação no GitHub Pages.")
+          PY
+      - name: Anexar prévia HTML para download e revisão
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-site-ofertas-explosivas
+          path: preview-site/index.html
+          retention-days: 14
