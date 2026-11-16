@@ -105,6 +105,8 @@ HORARIOS_POSTAGEM = ["11:47", "15:47", "19:47"]
 # grátis). O robô renova a chave toda semana. Sem o segredo, nada muda.
 # Habilitar manualmente após testar o token, sem deixar a primeira configuração publicar por acidente.
 POSTAR_INSTAGRAM = os.environ.get("INSTAGRAM_PUBLICAR", "").strip().lower() == "sim"
+# Opt-in separado: o robô nunca comenta um link até a permissão ser homologada.
+COMENTAR_LINK_INSTAGRAM = os.environ.get("INSTAGRAM_COMENTAR_LINK", "").strip().lower() == "sim"
 
 # ============================================================
 # (daqui pra baixo não precisa mexer)
@@ -2931,7 +2933,7 @@ def rodar_postar():
         texto += f"\n\nTodas as ofertas: {PAGINA_URL}"
     entrega = {"palavra": r["titulo"], "video": r["video"], "legenda": r["legenda"], "ia": r.get("ia")}
     publicar_painel([entrega], texto)
-    agendar_redes(r["titulo"], entrega["arquivo"], r["legenda"])
+    agendar_redes(r["titulo"], entrega["arquivo"], r["legenda"], r["registro"])
     avisar("Pro WhatsApp (copie tudo abaixo e cole no seu canal):")
     avisar(texto)
     salvar_fila(fila)
@@ -3130,8 +3132,37 @@ def salvar_redes(d):
     REDES.write_text(json.dumps(d, ensure_ascii=False, indent=1))
 
 
-def agendar_redes(titulo, arquivo, legenda):
-    """Põe o vídeo na fila das redes que têm credenciais configuradas."""
+def link_para_comentario(registro):
+    """Recupera o link exato do produto do vídeo, sem inventar ou encurtar URLs.
+
+    Em comparativos, seleciona o link da opção barata, destacada na chamada final.
+    """
+    if not isinstance(registro, dict):
+        return ""
+    dados = registro.get("produto") or registro.get("barato") or {}
+    link = dados.get("link") if isinstance(dados, dict) else ""
+    if not isinstance(link, str):
+        return ""
+    link = link.strip()
+    if not link or any(c.isspace() for c in link) or len(link) > 2048:
+        return ""
+    try:
+        url = urllib.parse.urlsplit(link)
+    except ValueError:
+        return ""
+    dominio = (url.hostname or "").lower()
+    if url.scheme != "https" or dominio not in (
+        "shope.ee", "s.shopee.com.br", "shopee.com.br",
+    ) or not url.path or url.username or url.password:
+        return ""
+    # A URL de redirecionamento sem affiliate_id pode perder a atribuição de comissão.
+    if "an_redir" in url.path and "affiliate_id" not in urllib.parse.parse_qs(url.query):
+        return ""
+    return link
+
+
+def agendar_redes(titulo, arquivo, legenda, registro=None):
+    """Põe o vídeo na fila das redes e preserva o link do produto exibido nele."""
     ig_ativo = POSTAR_INSTAGRAM and bool(IG_TOKEN)
     yt_ativo = bool(YT_CLIENT_ID and YT_CLIENT_SECRET and YT_REFRESH_TOKEN)
     if not (ig_ativo or yt_ativo):
@@ -3141,8 +3172,11 @@ def agendar_redes(titulo, arquivo, legenda):
     if any(p.get("data") == hoje and p.get("arquivo") == arquivo for p in d["posts"]):
         print(f"Redes: vídeo {arquivo} já está na fila, sem duplicar.")
         return
+    link = link_para_comentario(registro)
     d["posts"].append({"data": hoje, "titulo": titulo, "arquivo": arquivo,
                        "legenda": legenda, "instagram": "pendente" if ig_ativo else "desligado",
+                       "ig_link_produto": link if ig_ativo else "",
+                       "ig_comentario": "pendente" if ig_ativo and link else "desligado",
                        "youtube": "pendente" if yt_ativo else "desligado", "tentativas": 0})
     salvar_redes(d)
 
@@ -3259,6 +3293,56 @@ def cuidar_da_chave_ig(d):
                  "troque o segredo INSTAGRAM_TOKEN (ou crie o GH_PAT_SEGREDOS pro robô renovar sozinho).")
 
 
+def comentar_link_reel(media_id, link):
+    """Publica só a URL, uma vez, em um Reel já publicado.
+
+    Verifica a lista de comentários antes de enviar. Se não conseguir ler, NÃO envia,
+    pois isso poderia duplicar um comentário num retry após erro de conexão.
+    """
+    if not str(media_id).isdecimal() or not link or link_para_comentario({"produto": {"link": link}}) != link:
+        raise ValueError("ID do Reel ou link de afiliado inválido")
+    encontrados = _ig("get", f"{media_id}/comments", fields="id,text", limit=100)
+    if not isinstance(encontrados.get("data"), list):
+        raise RuntimeError("A Meta não retornou a lista de comentários")
+    for c in encontrados["data"]:
+        if c.get("text", "").strip() == link:
+            return str(c.get("id") or "ja-existente")
+    if encontrados.get("paging", {}).get("next"):
+        # Para impedir duplicatas, não posta se a listagem estiver truncada.
+        raise RuntimeError("Há mais comentários que o limite consultado: revisão manual necessária")
+    retorno = _ig("post", f"{media_id}/comments", message=link)
+    cid = str(retorno.get("id") or "")
+    if not cid.isdecimal():
+        raise RuntimeError("Comentário enviado, mas o retorno não confirmou um ID; verificar manualmente")
+    return cid
+
+
+def processar_comentarios_reels(posts):
+    """Comentários separados do upload, inclusive para Reels já publicados na fila."""
+    if not COMENTAR_LINK_INSTAGRAM:
+        return
+    for p in posts:
+        if p.get("instagram") != "postado" or not p.get("ig_id"):
+            continue
+        if p.get("ig_comentario") in ("postado", "incerto", "desligado"):
+            continue
+        link = p.get("ig_link_produto") or ""
+        if not link:
+            p["ig_comentario"] = "sem_link"
+            continue
+        try:
+            p["ig_comentario_id"] = comentar_link_reel(p["ig_id"], link)
+            p["ig_comentario"] = "postado"
+            print(f"Instagram: comentário com link confirmado no Reel {p['ig_id']}.")
+        except Exception as e:
+            # Nunca repetir automaticamente uma escrita que talvez tenha sido processada.
+            p["ig_comentario"] = "incerto"
+            p["ig_comentario_erro"] = _sem_chave(e)
+            problema(f"Instagram: comentário não confirmado no Reel {p['ig_id']}. "
+                     "Revise o post antes de tentar novamente.")
+            continue
+
+
 def rodar_instagram():
     """Posta no Instagram os vídeos entregues que estão na fila (redes.json)."""
     if not (POSTAR_INSTAGRAM and IG_TOKEN):
@@ -3299,6 +3383,7 @@ def rodar_instagram():
         x.update(instagram="postado", ig_id=mid, ig_link=link, ig_hora=dt.datetime.now().strftime("%H:%M"))
         x.pop("erro", None)
         avisar(f"📸 Postado no Instagram: {x['titulo']}" + (f"\n{link}" if link else ""))
+    processar_comentarios_reels(d["posts"])
     cuidar_da_chave_ig(d)
     salvar_redes(d)
 
@@ -3924,7 +4009,7 @@ def rodar_completo(maximo=None):
     pasta_dia.mkdir(parents=True, exist_ok=True)
     hist = ler_historico()
     ofertas = ler_ofertas()
-    blocos_whatsapp, entregas = [], []
+    blocos_whatsapp, entregas, resultados_por_video = [], [], []
     feitos = 0
     sub = ["robo", hoje.strftime("%Y%m%d")]
     fazer = {"telaverde": fazer_tela_verde, "conversa": fazer_conversa,
@@ -3947,6 +4032,7 @@ def rodar_completo(maximo=None):
             blocos_whatsapp.append(r["whatsapp"])
             entregas.append({"palavra": r["titulo"], "video": r["video"], "legenda": r["legenda"],
                              "ia": r.get("ia")})
+            resultados_por_video.append(r)
             for i in r["ids"]:
                 hist[i] = hoje.isoformat()
             ofertas.insert(0, r["registro"])
@@ -3968,8 +4054,8 @@ def rodar_completo(maximo=None):
             texto += f"\n\nTodas as ofertas: {PAGINA_URL}"
     publicar_pagina(ofertas)
     publicar_painel(entregas, texto)
-    for x in entregas:
-        agendar_redes(x["palavra"], x["arquivo"], x["legenda"])
+    for x, resultado in zip(entregas, resultados_por_video):
+        agendar_redes(x["palavra"], x["arquivo"], x["legenda"], resultado["registro"])
     if texto:
         avisar("Pro WhatsApp (copie tudo abaixo e cole no seu canal):")
         avisar(texto)

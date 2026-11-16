@@ -232,5 +232,78 @@ class InstagramUnifiedLoginTests(unittest.TestCase):
             publicar.assert_not_called()
 
 
+class InstagramLinkCommentTests(unittest.TestCase):
+    def test_only_exact_product_link_is_used(self):
+        link = "https://shope.ee/abc123?affiliate_id=987"
+        self.assertEqual(
+            bot.link_para_comentario({"tipo": "promo", "produto": {"link": link}}),
+            link,
+        )
+        barato = "https://shope.ee/barato?affiliate_id=987"
+        self.assertEqual(
+            bot.link_para_comentario({
+                "famoso": {"link": "https://shope.ee/caro"},
+                "barato": {"link": barato},
+            }), barato
+        )
+
+    def test_untracked_or_unsafe_link_is_rejected(self):
+        invalid = (
+            "https://shope.ee/an_redir?origin_link=https://shopee.com.br/x",
+            "https://evil.example/produto",
+            "http://shope.ee/abc",
+            "https://shope.ee/abc\nextra",
+            "",
+        )
+        for url in invalid:
+            with self.subTest(url=url):
+                self.assertEqual(bot.link_para_comentario({"produto": {"link": url}}), "")
+
+    def test_comment_sends_only_url_without_extra_words(self):
+        link = "https://shope.ee/test123?affiliate_id=987"
+        def api(method, path, **args):
+            if method == "get":
+                self.assertEqual(path, "18159644740522144/comments")
+                return {"data": []}
+            self.assertEqual(method, "post")
+            self.assertEqual(path, "18159644740522144/comments")
+            self.assertEqual(args, {"message": link})
+            return {"id": "1800000001"}
+        with mock.patch.object(bot, "_ig", side_effect=api) as client:
+            cid = bot.comentar_link_reel("18159644740522144", link)
+        self.assertEqual(cid, "1800000001")
+        self.assertEqual(client.call_count, 2)
+
+    def test_same_link_already_commented_does_not_post_again(self):
+        link = "https://shope.ee/test123?affiliate_id=987"
+        with mock.patch.object(bot, "_ig", return_value={
+            "data": [{"id": "1800000002", "text": link}]
+        }) as client:
+            cid = bot.comentar_link_reel("18159644740522144", link)
+        self.assertEqual(cid, "1800000002")
+        client.assert_called_once()
+
+    def test_uncertain_failure_is_not_automatically_retried(self):
+        link = "https://shope.ee/test123?affiliate_id=987"
+        item = {"instagram": "postado", "ig_id": "18159644740522144",
+                "ig_link_produto": link, "ig_comentario": "pendente"}
+        with mock.patch.object(bot, "COMENTAR_LINK_INSTAGRAM", True), \
+             mock.patch.object(bot, "comentar_link_reel", side_effect=RuntimeError("falhou")) as send, \
+             mock.patch.object(bot, "problema"):
+            bot.processar_comentarios_reels([item])
+            bot.processar_comentarios_reels([item])
+        send.assert_called_once()
+        self.assertEqual(item["ig_comentario"], "incerto")
+
+    def test_never_comment_without_explicit_opt_in(self):
+        link = "https://shope.ee/test123?affiliate_id=987"
+        item = {"instagram": "postado", "ig_id": "18159644740522144",
+                "ig_link_produto": link, "ig_comentario": "pendente"}
+        with mock.patch.object(bot, "COMENTAR_LINK_INSTAGRAM", False), \
+             mock.patch.object(bot, "_ig") as api:
+            bot.processar_comentarios_reels([item])
+            api.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

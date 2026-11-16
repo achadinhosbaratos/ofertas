@@ -83,6 +83,7 @@ jobs:
           INSTAGRAM_TOKEN: ${{ secrets.INSTAGRAM_TOKEN }}
           INSTAGRAM_AUTH_MODE: ${{ vars.INSTAGRAM_AUTH_MODE }}
           INSTAGRAM_USER_ID: ${{ vars.INSTAGRAM_USER_ID }}
+          INSTAGRAM_COMENTAR_LINK: ${{ vars.INSTAGRAM_COMENTAR_LINK }}
           INSTAGRAM_PUBLICAR: 'nao'  # bloqueio preventivo até concluir o teste de um Reel  # chave do Instagram (sem ela, não posta lá)
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
@@ -115,6 +116,7 @@ jobs:
           INSTAGRAM_TOKEN: ${{ secrets.INSTAGRAM_TOKEN }}
           INSTAGRAM_AUTH_MODE: ${{ vars.INSTAGRAM_AUTH_MODE }}
           INSTAGRAM_USER_ID: ${{ vars.INSTAGRAM_USER_ID }}
+          INSTAGRAM_COMENTAR_LINK: ${{ vars.INSTAGRAM_COMENTAR_LINK }}
           INSTAGRAM_PUBLICAR: 'nao'  # bloqueio preventivo até concluir o teste de um Reel
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

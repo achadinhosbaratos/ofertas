@@ -55,6 +55,16 @@ A publicação exige conta profissional, app Meta e token com as permissões `in
 
 A verificação de leitura do perfil não comprova as permissões de publicação. A primeira publicação real ainda precisa de validação controlada.
 
+#### Comentário automático apenas com o link de afiliado
+
+Após publicar um Reel, o robô poderá criar **um comentário contendo somente a URL de afiliado do produto daquele vídeo** (sem introduções, emojis ou hashtags), desde que:
+
+- `INSTAGRAM_PUBLICAR=sim` e `INSTAGRAM_COMENTAR_LINK=sim` estejam configuradas no workflow e a API da Meta aceite a permissão `instagram_manage_comments` para o login unificado;
+- exista uma URL HTTPS válida da Shopee associada à oferta. O código usa `produto.link` em vídeos individuais e `barato.link` nos comparativos. Não inventa links nem publica `shope.ee/an_redir` sem `affiliate_id`;
+- a verificação de comentários existentes seja concluída, para impedir duplicações. Caso a resposta seja incerta, **o robô não repete automaticamente** a operação.
+
+O opt-in `INSTAGRAM_COMENTAR_LINK` permanece desligado até confirmar a permissão e a criação do comentário em um Reel de teste. O recurso **não foi ativado na produção**. Comentários do Instagram geralmente não tornam a URL clicável, mas ela poderá ser copiada.
+
 ## Agendamento
 
 O workflow `.github/workflows/robo.yml` executa o robô nos horários definidos em UTC, correspondentes aos horários de Brasília comentados no arquivo. Também pode ser iniciado manualmente em **Actions → Robô de achadinhos → Run workflow**.
