@@ -103,7 +103,8 @@ HORARIOS_POSTAGEM = ["11:47", "15:47", "19:47"]
 
 # Instagram: com o segredo INSTAGRAM_TOKEN, cada vídeo entregue vira um Reel no seu perfil (API oficial,
 # grátis). O robô renova a chave toda semana. Sem o segredo, nada muda.
-POSTAR_INSTAGRAM = True
+# Habilitar manualmente após testar o token, sem deixar a primeira configuração publicar por acidente.
+POSTAR_INSTAGRAM = os.environ.get("INSTAGRAM_PUBLICAR", "").strip().lower() == "sim"
 
 # ============================================================
 # (daqui pra baixo não precisa mexer)
@@ -3091,7 +3092,12 @@ def problema(texto):
 # depois de publicar a página ("python bot.py instagram"). Se der erro, o próximo horário tenta
 # de novo (até 3 vezes, no mesmo dia). A chave vale 60 dias; o robô renova toda semana.
 # ------------------------------------------------------------
-IG_API = "https://graph.instagram.com"
+# "unified" usa um System User Access Token na Graph API do Facebook.
+# A opção antiga continua disponível para credenciais legadas.
+IG_AUTH_MODE = os.environ.get("INSTAGRAM_AUTH_MODE", "instagram").strip().lower()
+IG_USER_ID = os.environ.get("INSTAGRAM_USER_ID", "").strip()
+IG_API = ("https://graph.facebook.com/v27.0" if IG_AUTH_MODE == "unified"
+          else "https://graph.instagram.com")
 IG_TENTATIVAS = 3
 PRAZO_REENVIO_DIAS = 2  # permite novas tentativas até dois dias depois da geração
 _IG_CHAVE = [IG_TOKEN]      # a chave em uso (muda se a renovação devolver outra)
@@ -3184,8 +3190,18 @@ def video_no_ar(url, espera=300):
 
 def postar_reel(video_url, legenda):
     """Cria o Reel, espera o Instagram processar e publica. Devolve (id, link)."""
-    eu = _ig("get", "me", fields="user_id,username")
-    uid = eu.get("user_id") or eu.get("id") or "me"
+    if IG_AUTH_MODE == "unified":
+        if not IG_USER_ID.isdecimal():
+            raise RuntimeError("INSTAGRAM_USER_ID ausente ou inválido no login unificado")
+        # SUAT identifica o usuário do sistema, não necessariamente o perfil do Instagram.
+        # Confirme acesso ao Instagram especificado, antes de criar qualquer container.
+        perfil = _ig("get", IG_USER_ID, fields="id,username")
+        if str(perfil.get("id")) != IG_USER_ID:
+            raise RuntimeError("O token não confirmou acesso ao INSTAGRAM_USER_ID")
+        uid = IG_USER_ID
+    else:
+        eu = _ig("get", "me", fields="user_id,username")
+        uid = eu.get("user_id") or eu.get("id") or "me"
     cont = _ig("post", f"{uid}/media", media_type="REELS", video_url=video_url,
                caption=legenda[:2200], share_to_feed="true")["id"]
     for _ in range(60):                       # baixar e processar leva de segundos a alguns minutos
@@ -3206,8 +3222,10 @@ def postar_reel(video_url, legenda):
 
 
 def cuidar_da_chave_ig(d):
-    """A chave do Instagram vale 60 dias e só pode ser renovada depois de 24 h: o robô renova uma vez por
-    semana. Se a chave nova vier diferente, o robo.yml salva no segredo (precisa do GH_PAT_SEGREDOS)."""
+    """Renova somente o token antigo (Instagram Login). SUAT tem ciclo de vida próprio."""
+    if IG_AUTH_MODE == "unified":
+        # SUAT não usa o endpoint ig_refresh_token e pode ser de duração indeterminada.
+        return
     hoje = dt.date.today()
     if not d.get("chave_desde"):              # chave nova: anota e só renova daqui a uma semana
         d["chave_desde"] = d["chave_renovada"] = hoje.isoformat()
@@ -3244,7 +3262,10 @@ def cuidar_da_chave_ig(d):
 def rodar_instagram():
     """Posta no Instagram os vídeos entregues que estão na fila (redes.json)."""
     if not (POSTAR_INSTAGRAM and IG_TOKEN):
-        print("Instagram: desligado (sem o segredo INSTAGRAM_TOKEN).")
+        print("Instagram: desligado (configure INSTAGRAM_PUBLICAR=sim e INSTAGRAM_TOKEN).")
+        return
+    if IG_AUTH_MODE == "unified" and not IG_USER_ID.isdecimal():
+        problema("Instagram Unified Login: configure INSTAGRAM_USER_ID antes de publicar.")
         return
     d = ler_redes()
     hoje = dt.date.today()
