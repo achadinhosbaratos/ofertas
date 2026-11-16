@@ -81,7 +81,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_CANAL: ${{ secrets.TELEGRAM_CANAL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          VIDEO_IA_MAX_POR_DIA: ${{ vars.VIDEO_IA_MAX_POR_DIA }}
+          VIDEO_IA_MAX_POR_DIA: "0"  # Geração paga de clipes desativada
           INSTAGRAM_TOKEN: ${{ secrets.INSTAGRAM_TOKEN }}
           INSTAGRAM_AUTH_MODE: ${{ vars.INSTAGRAM_AUTH_MODE }}
           INSTAGRAM_USER_ID: ${{ vars.INSTAGRAM_USER_ID }}

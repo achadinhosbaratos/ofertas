@@ -13,13 +13,9 @@ Automação para selecionar ofertas do feed de afiliados Shopee, gerar vídeos v
 
 **Google Flow está desativado por padrão.** O vídeo é montado automaticamente pelo próprio robô; não é necessário gerar ou devolver clipes manualmente.
 
-## Clipe automático do produto em uso
+## Geração de vídeos sem custo de clipe
 
-O formato `telaverde` usa o Gemini Omni 1.2 Flash para gerar uma cena de 5 segundos em 720p vertical a partir das fotos do anúncio. O robô pede um gesto simples com o produto, compara três quadros com as fotos e usa o clipe aprovado na abertura com o selo de IA. O gerador acrescenta narração, preço e chamada. Um clipe indisponível ou rejeitado dá lugar à montagem com as fotos.
-
-Para ativar, use um projeto com faturamento da Gemini API no segredo `GEMINI_API_KEY` e crie a variável `VIDEO_IA_MAX_POR_DIA` em **Settings → Secrets and variables → Actions → Variables**. Use `1` para experimentar com um clipe por dia ou `3` para acompanhar os três horários habituais. O valor `0` ou uma variável ausente desativa a geração. Deixe `USAR_FLOW = False` no modo automático.
-
-A geração é cobrada pela [Gemini API](https://aistudio.google.com/docs/pricing#gemini-omni-1.2-flash). O robô reserva uma tentativa antes de preparar cada clipe, inclusive quando a tentativa falha, e grava o controle diário em `video_ia.json` com o histórico do workflow. Assim uma execução de reserva que leia esse histórico evita repetir o pedido do mesmo produto no dia. Os logs do workflow mostram se a cena foi aproveitada ou se a montagem usou só fotos.
+O agendamento monta os vídeos a partir das fotos do anúncio, com narração, preço e chamada. O workflow fixa `VIDEO_IA_MAX_POR_DIA` em `0` para manter desativada a geração de clipes pela API paga do Gemini.
 
 ## Segredos do GitHub
 
