@@ -6,6 +6,9 @@ on:
       - "gabriellwalter/Dio.desafio.github"
     paths:
       - ".github/workflows/publicar-vitrine.yml"
+      - "vitrine.js"
+      - "vitrine.py"
+      - "vitrine.css"
   workflow_dispatch:
 
 permissions:
