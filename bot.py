@@ -93,7 +93,6 @@ CANAL_WHATSAPP = "https://whatsapp.com/channel/0029VbEeN7aElagzyls0tb0N"
 NOME_PAINEL = "painel.html"   # sua página com os vídeos do dia (não aparece na página pública)
 VOZ = "pt-BR-FranciscaNeural"   # voz feminina; "pt-BR-AntonioNeural" é a masculina
 VELOCIDADE = "+8%"               # ritmo da narração ("+0%" normal, "+15%" mais rápido)
-RITMO_TELA_VERDE = "+15%"        # tela verde: fala mais rápida, como nos vídeos de afiliado que vendem
 
 # Google Flow é opcional. Desligado por padrão para o robô não depender de uma etapa manual.
 # Se ativado, o sistema poderá usar clipes enviados pelo Telegram; sem clipe, monta com fotos.
@@ -1754,10 +1753,8 @@ def fazer_conversa(produtos, palavra, hist, pasta_dia, rnd, usar_feed, sub):
 # Cada quadro é desenhado aqui no Python e vai direto pro ffmpeg.
 # ------------------------------------------------------------
 TV_TEXTO_Y = 300            # topo dos textos de cima (pergunta, nome, preço, usos, nota, chamada)
-TV_LUPI_ALTURA = 440        # o Lupi fica embaixo à esquerda (o lado direito tem os botões do app)
-TV_LUPI_PE = 1600           # onde ficam os pés do Lupi
-TV_LEGENDA = (690, 1425)    # centro da legenda, ao lado do Lupi
-TV_LEGENDA_LARG = 520
+TV_LEGENDA = (585, 1425)    # centro da legenda, ao lado do Lupi
+TV_LEGENDA_LARG = 610
 TV_PLANO = 2.4              # duração média de cada enquadramento (segundos)
 TV_MOVIMENTOS = ["detalhe", "panorama", "sobe", "panorama2", "detalhe2"]
 # cenários coloridos (cor de cima, cor de baixo) pro produto recortado do fundo branco
@@ -1766,35 +1763,18 @@ TV_CORES = [((244, 239, 255), (212, 200, 250)),     # lilás
             ((255, 244, 233), (255, 214, 190))]     # pêssego
 
 
-def roteiro_tela_verde(p, ia, palavra, rnd):
-    """Falas do vídeo: [{'secao', 'quem', 'fala'}]. O Lupi não diz que usou nem que comprou
-    (seria depoimento falso): fala só do que o anúncio mostra."""
-    nome = (ia.get("nome_curto") or palavra).strip()
-    nome = nome[0].upper() + nome[1:]
-    nota = f"{p['nota']:.1f}".replace(".", ",")
-    tem_ia = bool(ia.get("pergunta_amiga") and ia.get("como_funciona"))
-    pergunta = ia["pergunta_amiga"] if tem_ia else rnd.choice([
-        "Lupi, achou alguma coisa boa hoje?", "E aí, Lupi, qual é o achado de hoje?"])
-    if len(pergunta.split()) > 11 and ia.get("gancho", "").endswith("?"):
-        pergunta = ia["gancho"]                   # a pergunta veio comprida: o gancho é mais curto
-    apresenta = ia["como_funciona"] if tem_ia else rnd.choice([
-        f"Achei! Olha só: {nome}.", f"Achei sim! Olha isso: {nome}."])
-    if len(apresenta.split()) > 18:               # veio comprida: fica só a 1ª frase, se ela for curta
-        primeira = re.split(r"(?<=[.!?])\s+", apresenta)[0]
-        apresenta = primeira if len(primeira.split()) <= 18 else f"Olha só: {nome}."
-    falas = [
-        {"secao": "gancho", "quem": "amiga", "fala": pergunta},
-        {"secao": "produto", "quem": "lupi", "fala": apresenta},
-        {"secao": "preco", "quem": "lupi",
-         "fala": f"De {reais_curto(p['preco_cheio'])} por {reais_curto(p['preco'])} na Shopee!"},
+def roteiro_tela_verde(p, ia, palavra, *, com_clipe=False):
+    """Uma fala sobre o produto e uma única chamada, sem depoimento inventado."""
+    nome = limpar_texto(ia.get("nome_curto"), 45) or palavra
+    uso = re.split(r"(?<=[.!?])\s+", (ia.get("como_funciona") or "").strip(), maxsplit=1)[0]
+    if not 2 <= len(uso.split()) <= 14:
+        uso = ""
+    primeiro = f"{nome[0].upper()}{nome[1:]} por {reais_curto(p['preco'])} na Shopee."
+    abertura = (uso or primeiro) if com_clipe else " ".join(filter(None, (primeiro, uso)))
+    return [
+        {"secao": "abertura", "quem": "lupi", "fala": abertura},
+        {"secao": "cta", "quem": "lupi", "fala": "Confira a oferta no link do perfil."},
     ]
-    if p["nota"] >= 1:     # na fala só a nota e as vendas; "enviado do Brasil" fica escrito na tela
-        prova = f"Nota {nota}"
-        prova += f" e {vendas_texto(p['vendas'])} {METRICA}!" if p["vendas"] >= 100 else " na Shopee!"
-        falas.append({"secao": "prova", "quem": "lupi", "fala": prova})
-    falas.append({"secao": "cta", "quem": "lupi",
-                  "fala": "Link no meu perfil. Confere o preço de hoje, que ele pode mudar!"})
-    return falas
 
 
 def _na_largura(img):
@@ -1947,62 +1927,16 @@ def _colar(quadro, img, cx, cy, f=99):
     quadro.paste(im, (int(cx - im.width / 2), int(cy - im.height / 2)), im)
 
 
-def _cartao_pergunta(palavras, ativo):
-    """A pergunta da amiga em cima, com a palavra falada em laranja."""
-    fnt = forte(64)
-    d0 = ImageDraw.Draw(Image.new("RGB", (8, 8)))
-    linhas, atual = [], []
-    for i, w in enumerate(palavras):
-        if atual and d0.textlength(" ".join(palavras[j] for j in atual + [i]), font=fnt) > 840:
-            linhas.append(atual)
-            atual = []
-        atual.append(i)
-    if atual:
-        linhas.append(atual)
-    linhas = linhas[:4]
-    alt = 56 + len(linhas) * 78
-    img = Image.new("RGBA", (W, alt + 70), (0, 0, 0, 0))
-    sombra = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    ImageDraw.Draw(sombra).rounded_rectangle((70, 40, W - 70, 40 + alt), 40, fill=(0, 0, 0, 120))
-    img.alpha_composite(sombra.filter(ImageFilter.GaussianBlur(10)))
+def _cartao_abertura(nome, preco):
+    """Nome e preço legíveis desde o primeiro quadro."""
+    img = Image.new("RGBA", (W, 224), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    d.rounded_rectangle((70, 30, W - 70, 30 + alt), 40, fill=(255, 236, 244), outline=PRETO, width=6)
-    pilula(img, "AMIGA", 180, 30, media(30), (233, 64, 120), "white", px=18, py=8)
-    y = 30 + 30
-    for ln in linhas:
-        texto = " ".join(palavras[i] for i in ln)
-        x = W / 2 - d.textlength(texto, font=fnt) / 2
-        for i in ln:
-            d.text((x, y), palavras[i], font=fnt, fill=LARANJA if i == ativo else PRETO)
-            x += d.textlength(palavras[i] + " ", font=fnt)
-        y += 78
-    return img
-
-
-def _cartao_nome(nome):
-    img = Image.new("RGBA", (W, 250), (0, 0, 0, 0))
-    pilula(img, "ACHADO DO DIA", W / 2, 44, media(34), (233, 64, 120), "white", px=22, py=10)
-    d = ImageDraw.Draw(img)
-    tam = 72
-    while tam > 44 and d.textlength(nome, font=forte(tam)) > 860:
-        tam -= 4
-    pilula(img, caber(d, nome, forte(tam), 860), W / 2, 150, forte(tam), PRETO, "white", px=40, py=22, angulo=-2)
-    return img
-
-
-def _cartao_preco(p, pct):
-    img = Image.new("RGBA", (W, 400), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    t = f"de {reais(p['preco_cheio'])}"
-    fnt = media(50)
-    pilula(img, t, W / 2, 50, fnt, (0, 0, 0, 175), CINZA, px=28, py=12)
-    tw = d.textlength(t, font=fnt)
-    d.line((W / 2 - tw / 2 - 6, 54, W / 2 + tw / 2 + 6, 54), fill=VERMELHO, width=8)
-    pilula(img, f"por {reais(p['preco'])}", W / 2, 185, forte(108), AMARELO, PRETO, px=46, py=26, angulo=3)
-    if pct:
-        selo(img, f"-{pct}%", 912, 92, 74)
-    pilula(img, f"preço visto em {dt.date.today():%d/%m}", W / 2, 330, media(32), (0, 0, 0, 160),
-           (235, 230, 245), px=20, py=9)
+    fonte_nome = forte(54)
+    grafite, amarelo = "#25232B", "#FFD84C"
+    pilula(img, caber(d, nome, fonte_nome, 700), W / 2, 48, fonte_nome, grafite, "white")
+    pilula(img, reais(preco), W / 2, 139, forte(76), amarelo, grafite, px=40, py=18)
+    d.text((W / 2, 205), f"Preço visto em {dt.date.today():%d/%m}", font=media(28), fill="white",
+           anchor="mm", stroke_width=2, stroke_fill=grafite)
     return img
 
 
@@ -2011,74 +1945,6 @@ def _cartao_cta():
     pilula(img, "LINK NO PERFIL  ↗", W / 2, 90, forte(92), AMARELO, PRETO, px=46, py=26, angulo=-2)
     pilula(img, "confere o preço de hoje", W / 2, 228, media(46), PRETO, "white", px=30, py=14)
     return img
-
-
-def _etiqueta(texto, estilo):
-    """Etiqueta arredondada: 'check' (branca com ✓), 'nota' (amarela com estrela), 'verde' ou 'branca'."""
-    fnt = media(52)
-    tw = ImageDraw.Draw(Image.new("RGB", (8, 8))).textlength(texto, font=fnt)
-    icone = 58 if estilo in ("check", "nota") else 0
-    w, h = int(tw + 60 + (icone + 10 if icone else 0)), 90
-    img = Image.new("RGBA", (w + 24, h + 32), (0, 0, 0, 0))
-    sombra = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    ImageDraw.Draw(sombra).rounded_rectangle((12, 18, 12 + w, 18 + h), h // 2, fill=(0, 0, 0, 120))
-    img.alpha_composite(sombra.filter(ImageFilter.GaussianBlur(8)))
-    d = ImageDraw.Draw(img)
-    fundo, cor = {"check": ("white", PRETO), "nota": (AMARELO, PRETO),
-                  "verde": (VERDE, "white"), "branca": ("white", PRETO)}[estilo]
-    d.rounded_rectangle((12, 10, 12 + w, 10 + h), h // 2, fill=fundo)
-    x = 12 + 26
-    if estilo == "check":
-        check(d, x - 4, 10 + (h - 58) // 2, 58)
-        x += icone + 10
-    elif estilo == "nota":
-        estrela(d, x + 25, 10 + h / 2, 30, PRETO)
-        x += icone + 10
-    d.text((x, 10 + h / 2), texto, font=fnt, fill=cor, anchor="lm")
-    return img
-
-
-def _fileiras(imgs, y0, larg=930, gap_x=10, gap_y=4):
-    """Centro (x, y) de cada etiqueta, em fileiras centralizadas a partir de y0."""
-    fileiras, atual, ocupado = [], [], 0
-    for i, im in enumerate(imgs):
-        if atual and ocupado + gap_x + im.width > larg:
-            fileiras.append(atual)
-            atual, ocupado = [], 0
-        ocupado += (gap_x if atual else 0) + im.width
-        atual.append(i)
-    if atual:
-        fileiras.append(atual)
-    pos, y = [None] * len(imgs), y0
-    for fl in fileiras:
-        x = (W - sum(imgs[i].width for i in fl) - gap_x * (len(fl) - 1)) / 2
-        alt = max(imgs[i].height for i in fl)
-        for i in fl:
-            pos[i] = (x + imgs[i].width / 2, y + alt / 2)
-            x += imgs[i].width + gap_x
-        y += alt + gap_y
-    return pos
-
-
-def _momentos(linha, gatilhos):
-    """Quando cada gatilho é falado na linha; se não achar a palavra, espalha por igual."""
-    toks = [sem_acento(w).lower().strip(".,!?;:…\"'()") for w in linha["palavras"]]
-    n, out, j = len(gatilhos), [], 0
-    for k, g in enumerate(gatilhos):
-        g = sem_acento((g or "").split()[0] if (g or "").split() else "").lower().strip(".,!?;:")
-        achou = None
-        for i in range(j, len(toks)):
-            if g and (toks[i] == g or (len(g) >= 4 and toks[i].startswith(g[:4]))):
-                achou = i
-                break
-        if achou is not None:
-            out.append(linha["tempos"][achou][0])
-            j = achou + 1
-        else:
-            out.append(linha["ini"] + (linha["fim"] - linha["ini"]) * (0.1 + 0.75 * k / max(1, n - 1)))
-    for k in range(1, n):
-        out[k] = max(out[k], out[k - 1] + 0.25)
-    return out
 
 
 def _blocos(palavras):
@@ -2094,12 +1960,12 @@ def _blocos(palavras):
     return blocos
 
 
-def _legenda_tv(palavras, bloco, ativo, largura=None):
+def _legenda_tv(palavras, bloco, ativo):
     fnt = forte(66)
     d0 = ImageDraw.Draw(Image.new("RGB", (8, 8)))
     linhas, atual = [], []
     for i in bloco:
-        if atual and d0.textlength(" ".join(palavras[j] for j in atual + [i]), font=fnt) > (largura or TV_LEGENDA_LARG) - 50:
+        if atual and d0.textlength(" ".join(palavras[j] for j in atual + [i]), font=fnt) > TV_LEGENDA_LARG - 50:
             linhas.append(atual)
             atual = []
         atual.append(i)
@@ -2171,21 +2037,18 @@ def _etiqueta_ia():
 CLIPE_TRECHO = 2.4          # duração de cada trecho repetido do clipe (segundos)
 CLIPE_ZOOM = (1.12, 1.24)   # zoom dos trechos repetidos: começa e termina nesses valores
 CLIPE_TRECHOS_DE = [0.45, 0.2, 0.65, 0.3]   # de onde saem os trechos (fração do clipe)
-CLIPE_FOTO_FINAL = 2.5      # com clipe: segundos de foto do produto no final (chamada + Lupi apontando)
 
 
-def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd, clipe=None, *,
+def montar_video_tela_verde(falas, p, f1, f2, nome, pasta, destino, rnd, clipe=None, *,
                             repetir_clipe=True, clipe_gerado_ia=True):
-    """Abre com o clipe do produto, quando disponível, e completa o vídeo com as fotos e o Lupi."""
+    """Mostra o preço na abertura e a assinatura do Lupi no fechamento."""
     fps = 30
-    pct = round(p["desconto"] * 100)
 
     # 1) vozes: cada fala começa logo depois da outra (corta o silêncio das pontas)
-    linhas, t, anterior = [], 0.15, None
+    linhas, t = [], 0.15
     for k, ln in enumerate(falas):
         audio = pasta / f"tv{k}.mp3"
-        voz, tom = (VOZ_LUPI, TOM_LUPI) if ln["quem"] == "lupi" else (VOZ_AMIGA, TOM_AMIGA)
-        ok, pals = narrar_tempos(ln["fala"], audio, voz=voz, tom=tom, ritmo=RITMO_TELA_VERDE)
+        ok, pals = narrar_tempos(ln["fala"], audio, voz=VOZ_LUPI, tom="+0Hz", ritmo=VELOCIDADE)
         dur = duracao(audio) if ok else max(1.2, len(ln["fala"]) / 15)
         vol = volume_por_quadro(audio, fps) if ok else []
         ini_fala, fim_fala = 0.0, dur
@@ -2193,8 +2056,8 @@ def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd, cli
         if ativos:
             ini_fala = max(0.0, ativos[0] / fps - 0.03)
             fim_fala = min(dur, (ativos[-1] + 1) / fps + 0.05)
-        if anterior is not None:
-            t += 0.22 if anterior != ln["quem"] else 0.08
+        if linhas:
+            t += 0.08
         toks = [w for w in ln["fala"].split() if _palavra_legenda(w)]
         if len(pals) == len(toks):
             tempos = [(a, b) for a, b, _ in pals]
@@ -2207,7 +2070,6 @@ def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd, cli
                        "fim": t + fim_fala - ini_fala, "vol": vol, "palavras": toks, "legenda": legenda,
                        "tempos": [(comeco + a, comeco + b) for a, b in tempos], "blocos": _blocos(legenda)})
         t += fim_fala - ini_fala
-        anterior = ln["quem"]
     total = t + 0.8
 
     # 2) seções (o que aparece em cima) e planos (enquadramentos de ~2,4 s, cortando junto com a fala)
@@ -2222,14 +2084,12 @@ def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd, cli
         a["fim"] = b["ini"]
     secoes[-1]["fim"] = total
 
-    # clipe do Flow: vai do começo até os últimos CLIPE_FOTO_FINAL segundos (ou até a chamada, se ela
-    # for curta). Toca inteiro em velocidade normal; se a fala for mais longa, o resto é preenchido
-    # com trechos do meio dele, com zoom (repeticoes).
+    # O clipe entra na abertura. A chamada final usa a foto.
     leitor, fim_clipe, ritmo_clipe, repeticoes = None, 0.0, 1.0, []
     if clipe:
         leitor = LeitorClipe(clipe, fps)
         ini_cta = next((s["ini"] for s in secoes if s["secao"] == "cta"), total)
-        fim_clipe = min(total, max(ini_cta, total - CLIPE_FOTO_FINAL))
+        fim_clipe = ini_cta
         if not repetir_clipe:
             fim_clipe = min(fim_clipe, leitor.dur)
         sobra = fim_clipe - leitor.dur
@@ -2242,8 +2102,7 @@ def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd, cli
                 de = leitor.dur * CLIPE_TRECHOS_DE[k % len(CLIPE_TRECHOS_DE)]
                 repeticoes.append({"ini": leitor.dur + k * parte, "fim": leitor.dur + (k + 1) * parte,
                                    "de": max(0.0, min(de, leitor.dur - parte)), "leitor": None})
-        preco_clipe = _cartao_preco(p, pct)
-        etiqueta_ia = _etiqueta_ia() if clipe_gerado_ia else None
+    etiqueta_ia = _etiqueta_ia() if leitor is not None and clipe_gerado_ia else None
 
     # cenários: foto 1, foto 2 e as versões em fundo colorido, intercalados (cada corte muda o visual)
     c1 = _cenarios(f1, rnd)
@@ -2256,7 +2115,7 @@ def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd, cli
         n = max(1, int(round((s["fim"] - s["ini"]) / TV_PLANO)))
         for k in range(n):
             planos.append({"ini": s["ini"] + (s["fim"] - s["ini"]) * k / n,
-                           "fim": s["ini"] + (s["fim"] - s["ini"]) * (k + 1) / n, "secao": s["secao"]})
+                           "fim": s["ini"] + (s["fim"] - s["ini"]) * (k + 1) / n})
     outros = list(range(1, len(canvases))) or [0]
     # capa (1º plano): o produto recortado num fundo colorido, se deu; senão a foto principal
     capa = next((i for i, c in enumerate(canvases) if len(c1) > 1 and c is c1[1]), 0)
@@ -2265,55 +2124,22 @@ def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd, cli
             pl["foto"], pl["mov"] = capa, "abre"
         elif i == len(planos) - 1:
             pl["foto"], pl["mov"] = 0, "fecha"
-        elif pl["secao"] in ("preco", "cta"):        # fundo da foto original: o amarelo aparece bem
-            pl["foto"], pl["mov"] = 0, "detalhe"
         else:
             pl["foto"], pl["mov"] = outros[i % len(outros)], movs[i % len(movs)]
         if i and pl["foto"] == planos[i - 1]["foto"] and pl["mov"] == planos[i - 1]["mov"]:
             pl["mov"] = movs[(i + 1) % len(movs)]
 
-    # 3) camadas de cada seção: (imagem, centro x, centro y, a partir de quando)
-    camadas_secao, sons = {}, []
-    for si, s in enumerate(secoes):
-        tipo, ln0, cam = s["secao"], s["linhas"][0], []
-        if tipo == "produto":
-            img = _cartao_nome(nome)
-            cam.append((img, W / 2, TV_TEXTO_Y + img.height / 2, s["ini"] + 0.05))
-        elif tipo == "preco":
-            img = _cartao_preco(p, pct)
-            cam.append((img, W / 2, TV_TEXTO_Y + img.height / 2, s["ini"] + 0.05))
-            sons.append((s["ini"] + 0.3, "plim", 0.45))
-        elif tipo in ("usos", "beneficios", "prova"):
-            if tipo == "usos":
-                itens = [(u, "check") for u in ia.get("usos", [])]
-                gat = [u for u, _ in itens]
-            elif tipo == "beneficios":
-                itens = [(b, "check") for b in ia.get("beneficios", [])[:3]]
-                gat = [""] * len(itens)
-            else:
-                itens = [(f"{p['nota']:.1f}".replace(".", ",") + " na Shopee", "nota"),
-                         (f"{vendas_texto(p['vendas'])} {METRICA}", "branca")]
-                gat = ["nota", "com"]
-                if p.get("nacional", True):
-                    itens.append(("enviado do Brasil", "verde"))
-                    gat.append("enviado")
-            imgs = [_etiqueta(txt, est) for txt, est in itens]
-            pos = _fileiras(imgs, TV_TEXTO_Y + 10)
-            for img, (x, y), quando in zip(imgs, pos, _momentos(ln0, gat)):
-                cam.append((img, x, y, quando))
-                sons.append((quando, "pop", 0.4))
-        elif tipo == "cta":
-            img = _cartao_cta()
-            cam.append((img, W / 2, TV_TEXTO_Y + img.height / 2, s["ini"] + 0.05))
-        camadas_secao[si] = cam
-        if si > 0 and s["ini"] > fim_clipe:
-            sons.append((s["ini"] - 0.1, "whoosh", 0.3))
+    abertura = _cartao_abertura(nome, p["preco"])
+    chamada = _cartao_cta()
+    with Image.open(PASTA / "assets" / "identidade" / "lupa-etiqueta.png") as simbolo:
+        lupi = simbolo.convert("RGBA")
+    lupi.thumbnail((156, 156), Image.LANCZOS)
+
+    sons = [(0.2, "plim", 0.3)]
     if leitor:
-        sons.append((fim_clipe - 0.1, "whoosh", 0.35))       # passagem do clipe pra foto da chamada
+        sons.append((max(0, fim_clipe - 0.1), "whoosh", 0.3))
         for r in repeticoes:
-            sons.append((r["ini"] - 0.08, "whoosh", 0.22))   # corte pra cada trecho repetido
-    topo_img = Image.new("RGBA", (W, 120), (0, 0, 0, 0))
-    pilula(topo_img, "link no perfil  ↗", W / 2, 60, media(40), (0, 0, 0, 150), "white", px=30, py=14)
+            sons.append((r["ini"] - 0.08, "whoosh", 0.22))
 
     # 4) áudio: falas no tempo certo + efeitos
     efeitos = gerar_efeitos(pasta)
@@ -2351,12 +2177,7 @@ def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd, cli
          "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
          "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", str(Path(destino).resolve())],
         stdin=subprocess.PIPE)
-    sprites, cache = {}, {}
-
-    def lupi(boca, olhos, pose):
-        if (boca, olhos, pose) not in sprites:
-            sprites[(boca, olhos, pose)] = desenhar_lupi(TV_LUPI_ALTURA, boca, olhos, pose)
-        return sprites[(boca, olhos, pose)]
+    cache = {}
 
     trecho_atual = None
     for q in range(n_quadros):
@@ -2381,62 +2202,27 @@ def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd, cli
             z *= 1 + 0.05 * max(0.0, 1 - (tt - pl["ini"]) * fps / 5)       # pulinho a cada corte
             quadro = _enquadrar(fundo, z, cx, cy2)
 
-        si = next((i for i, s in enumerate(secoes) if s["ini"] <= tt < s["fim"]), len(secoes) - 1)
-        s = secoes[si]
-        selos = s["secao"] in ("usos", "beneficios", "prova", "cta")
-        if no_clipe:
-            # o produto em uso + o preço desde o 1º quadro (é o que segura a pessoa) + aviso de IA;
-            # na nota e na chamada, os selos (nota, vendas...) ou o "link no perfil" entram no lugar do preço
-            if not selos:
-                quadro.paste(preco_clipe, (0, TV_TEXTO_Y - 30), preco_clipe)
-            if etiqueta_ia is not None:
-                quadro.paste(etiqueta_ia, (0, 200), etiqueta_ia)
-        elif s["secao"] not in ("gancho", "cta"):
-            quadro.paste(topo_img, (0, 262 - 60), topo_img)
-        if no_clipe:
-            pass
-        elif s["secao"] == "gancho":
-            ln = s["linhas"][0]
-            ativo = -1
-            if ln["ini"] - 0.05 <= tt <= ln["fim"]:
-                ativo = max([k for k, (a, b) in enumerate(ln["tempos"]) if tt >= a] or [0])
-            chave = ("pergunta", ativo)
-            if chave not in cache:
-                cache[chave] = _cartao_pergunta(ln["palavras"], ativo)
-            img = cache[chave]
-            _colar(quadro, img, W / 2, TV_TEXTO_Y - 30 + img.height / 2, int((tt - 0.0) * fps))
-        for img, x, y, quando in (camadas_secao[si] if selos or not no_clipe else []):
-            if tt >= quando:
-                _colar(quadro, img, x, y, int((tt - (quando if no_clipe else max(quando, fim_clipe))) * fps))
+        s = next((s for s in secoes if s["ini"] <= tt < s["fim"]), secoes[-1])
+        encerramento = s["secao"] == "cta"
+        cartao = chamada if encerramento else abertura
+        quadro.paste(cartao, (0, TV_TEXTO_Y - 30), cartao)
+        if encerramento:
+            quadro.paste(lupi, (120, 1270), lupi)
+        if no_clipe and etiqueta_ia is not None:
+            quadro.paste(etiqueta_ia, (0, 200), etiqueta_ia)
 
-        # fala de agora (pra boca do Lupi e a legenda)
         atual = next((ln for ln in linhas if ln["ini"] - 0.05 <= tt <= ln["fim"] + 0.12), None)
-        falando = atual is not None and atual["quem"] == "lupi"
-        boca = "sorriso"
-        if falando and atual["vol"]:
-            i = int((tt - atual["comeco"]) * fps)
-            v = atual["vol"][i] if 0 <= i < len(atual["vol"]) else 0
-            boca = "aberta" if v > 0.55 else ("meia" if v > 0.22 else "sorriso")
-        olhos = "fechados" if ((q + 50) % 96) in (0, 1, 2, 3) else "abertos"   # 1º quadro (capa) de olho aberto
-        pose = "aponta" if s["secao"] == "cta" else "normal"
-        pulo = abs(math.sin(tt * 7)) * 10 if falando else 3 * math.sin(tt * 2)
-        if not no_clipe:          # no clipe o produto é o destaque: o Lupi só entra depois
-            sp = lupi(boca, olhos, pose)
-            quadro.paste(sp, (-20, int(TV_LUPI_PE - sp.height - pulo)), sp)
-
-        # legenda: ao lado do Lupi; durante o clipe, no meio e pra todo mundo que fala
-        if atual is not None and atual["legenda"] and (falando or no_clipe):
+        if atual is not None and atual["legenda"]:
             k_ativo = max([k for k, (a, b) in enumerate(atual["tempos"]) if tt >= a] or [0])
             bi = next(i for i, b in enumerate(atual["blocos"]) if k_ativo in b)
-            chave = (id(atual), bi, k_ativo, no_clipe)
+            chave = (id(atual), bi, k_ativo)
             if chave not in cache:
                 if len(cache) > 40:
                     cache.clear()
-                cache[chave] = _legenda_tv(atual["legenda"], atual["blocos"][bi], k_ativo,
-                                           largura=860 if no_clipe else None)
+                cache[chave] = _legenda_tv(atual["legenda"], atual["blocos"][bi], k_ativo)
             inicio_bloco = atual["tempos"][atual["blocos"][bi][0]][0]
             img = cache[chave]
-            lx, ly = (W / 2, LEGENDA_Y + 40) if no_clipe else TV_LEGENDA
+            lx, ly = TV_LEGENDA if encerramento else (W / 2, TV_LEGENDA[1])
             _colar(quadro, img, lx, ly, max(0, int((tt - inicio_bloco) * fps)))
         proc.stdin.write(quadro.tobytes())
     proc.stdin.close()
@@ -2521,22 +2307,23 @@ def produzir_video(item, pasta_dia, rnd, clipe=None):
     f1, f2 = fotos[0], fotos[-1]
     if not item.get("ficha") and f2 is not f1 and _foto_limpa(f2) > _foto_limpa(f1) + 0.15:
         f1, f2 = f2, f1          # a foto mais limpa vira a principal (preço, chamada e capa)
-    falas = roteiro_tela_verde(p, ia, palavra, rnd)
     video = pasta_dia / f"{slug}.mp4"
     clipe_catalogo, origem_clipe = (None, None)
     if clipe is None and not MODO_TESTE:
         clipe_catalogo, origem_clipe = obter_clipe(CATALOGO_CLIPES, p["id"], pasta / "clipe-catalogo.mp4")
     clipe_automatico = clipe_catalogo or (_clipe_automatico(item, fotos, pasta) if clipe is None else None)
     opcoes_clipe = {"clipe_gerado_ia": False} if origem_clipe == "vendedor" else {}
+    falas = roteiro_tela_verde(p, ia, palavra, com_clipe=bool(clipe or clipe_automatico))
     try:
-        montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, video, rnd,
+        montar_video_tela_verde(falas, p, f1, f2, nome, pasta, video, rnd,
                                clipe=clipe or clipe_automatico, repetir_clipe=clipe_automatico is None, **opcoes_clipe)
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as e:
         if clipe_automatico is None:
             raise
         print(f"  montagem com clipe falhou ({type(e).__name__}). Usando as fotos.")
         clipe_automatico = None
-        montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, video, rnd)
+        falas = roteiro_tela_verde(p, ia, palavra)
+        montar_video_tela_verde(falas, p, f1, f2, nome, pasta, video, rnd)
     clipe = clipe or clipe_automatico
     dialogo = "\n".join(f"{'Lupi' if x['quem'] == 'lupi' else 'Amiga'}: {x['fala']}" for x in falas)
     cena_ia = bool(clipe) and origem_clipe != "vendedor"
