@@ -181,5 +181,56 @@ class VideoRetentionTests(unittest.TestCase):
             self.assertEqual(saved["posts"][0]["arquivo"], "pendente.mp4")
 
 
+class InstagramUnifiedLoginTests(unittest.TestCase):
+    def test_unified_requires_instagram_id(self):
+        with mock.patch.object(bot, "IG_AUTH_MODE", "unified"), \
+             mock.patch.object(bot, "IG_USER_ID", ""), \
+             mock.patch.object(bot, "_ig") as api:
+            with self.assertRaisesRegex(RuntimeError, "INSTAGRAM_USER_ID"):
+                bot.postar_reel("https://example.org/test.mp4", "teste")
+            api.assert_not_called()
+
+    def test_unified_validates_profile_before_creating_reel(self):
+        calls = []
+
+        def fake_ig(method, path, **kwargs):
+            calls.append((method, path))
+            if method == "get" and path == "178999":
+                return {"id": "178999", "username": "teste"}
+            if method == "post" and path.endswith("/media"):
+                return {"id": "container1"}
+            if method == "get" and path == "container1":
+                return {"status_code": "FINISHED"}
+            if method == "post" and path.endswith("/media_publish"):
+                return {"id": "media1"}
+            if method == "get" and path == "media1":
+                return {"permalink": "https://instagram.com/reel/mock"}
+            raise AssertionError("Chamada API inesperada")
+
+        with mock.patch.object(bot, "IG_AUTH_MODE", "unified"), \
+             mock.patch.object(bot, "IG_USER_ID", "178999"), \
+             mock.patch.object(bot, "_ig", side_effect=fake_ig), \
+             mock.patch.object(bot.time, "sleep"):
+            media_id, link = bot.postar_reel("https://example.org/test.mp4", "teste")
+        self.assertEqual(media_id, "media1")
+        self.assertEqual(link, "https://instagram.com/reel/mock")
+        self.assertEqual(calls[:2], [("get", "178999"), ("post", "178999/media")])
+
+    def test_suat_is_not_refreshed_with_instagram_login_endpoint(self):
+        with mock.patch.object(bot, "IG_AUTH_MODE", "unified"), \
+             mock.patch.object(bot, "_ig") as api:
+            bot.cuidar_da_chave_ig({})
+            api.assert_not_called()
+
+    def test_instagram_publication_is_opt_in(self):
+        with mock.patch.object(bot, "POSTAR_INSTAGRAM", False), \
+             mock.patch.object(bot, "IG_TOKEN", "token-simulado"), \
+             mock.patch.object(bot, "ler_redes") as fila, \
+             mock.patch.object(bot, "postar_reel") as publicar:
+            bot.rodar_instagram()
+            fila.assert_not_called()
+            publicar.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
