@@ -17,6 +17,23 @@ Automação para selecionar ofertas do feed de afiliados Shopee, gerar vídeos v
 
 O agendamento monta os vídeos a partir das fotos do anúncio, com narração, preço e chamada. O workflow fixa `VIDEO_IA_MAX_POR_DIA` em `0` para manter desativada a geração de clipes pela API paga do Gemini.
 
+## Clipes do vendedor e do HeyGen
+
+Cadastre as URLs diretas dos clipes autorizados em `clipes_produtos.json`, usando o ID exato do item como chave. Exemplo de entrada:
+
+```json
+{
+  "123456789": {
+    "vendedor": "https://exemplo.com/clipe-do-vendedor.mp4",
+    "heygen": "https://exemplo.com/clipe-ja-exportado-do-heygen.mp4"
+  }
+}
+```
+
+O robô tenta primeiro o clipe do vendedor. Se estiver ausente ou indisponível, tenta o vídeo exportado do HeyGen para o mesmo item. Use URLs HTTPS diretas, acessíveis pelo runner, de arquivos com até 20 MB. Sem clipe disponível, o robô segue com as fotos. Vídeos do HeyGen recebem o selo de IA.
+
+A franquia gratuita do HeyGen serve para criar vídeos no app. Gerar pelo workflow do GitHub exige [créditos da API do HeyGen](https://help.heygen.com/en/articles/10060327-heygen-api-pricing-credits-explained). O catálogo permite reaproveitar vídeos já feitos com a franquia gratuita.
+
 ## Segredos do GitHub
 
 Em **Settings → Secrets and variables → Actions**, configure os segredos aplicáveis:
