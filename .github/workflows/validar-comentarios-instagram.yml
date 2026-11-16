@@ -1,0 +1,77 @@
+name: Instagram - validar acesso aos comentarios (somente leitura)
+
+on:
+  push:
+    branches:
+      - "gabriellwalter/Dio.desafio.github"
+    paths:
+      - ".github/workflows/validar-comentarios-instagram.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: github-pages
+    steps:
+      - name: Consultar somente o Reel de teste e seus comentarios
+        env:
+          INSTAGRAM_TOKEN: ${{ secrets.INSTAGRAM_TOKEN }}
+          INSTAGRAM_AUTH_MODE: ${{ vars.INSTAGRAM_AUTH_MODE }}
+          INSTAGRAM_USER_ID: ${{ vars.INSTAGRAM_USER_ID }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          TOKEN = os.getenv("INSTAGRAM_TOKEN", "").strip()
+          MODO = os.getenv("INSTAGRAM_AUTH_MODE", "").strip().lower()
+          USER_ID = os.getenv("INSTAGRAM_USER_ID", "").strip()
+          MEDIA_ID = "18159644740522144"
+          HOST = "https://graph.facebook.com/v27.0"
+          if not TOKEN or MODO != "unified" or not USER_ID.isdecimal():
+              raise SystemExit("Configuracao Instagram incompleta (sem exibir dados sensiveis)")
+
+          def consultar(path, fields):
+              args = urllib.parse.urlencode({"fields": fields, "limit": 20, "access_token": TOKEN})
+              url = f"{HOST}/{path}?{args}"
+              try:
+                  with urllib.request.urlopen(url, timeout=25) as response:
+                      retorno = json.load(response)
+              except urllib.error.HTTPError as ex:
+                  try:
+                      code = json.load(ex).get("error", {}).get("code", "?")
+                  except Exception:
+                      code = "?"
+                  print(f"ERRO API /{path}: HTTP {ex.code}, codigo Meta {code}")
+                  return None
+              except Exception:
+                  print(f"ERRO API /{path}: falha na consulta (segredo preservado)")
+                  return None
+              return retorno
+
+          perfil = consultar(USER_ID, "id,username")
+          if not perfil or str(perfil.get("id")) != USER_ID or perfil.get("username", "").lower() != "achadinhos.baratos68":
+              raise SystemExit("Conta nao confirmada ou consulta negada")
+          print("CONTA: OK")
+
+          reel = consultar(MEDIA_ID, "id,media_type,permalink,caption")
+          if not reel or str(reel.get("id")) != MEDIA_ID:
+              raise SystemExit("Reel nao acessivel com o token")
+          print("REEL: OK, tipo", reel.get("media_type", "desconhecido"))
+          comentarios = consultar(f"{MEDIA_ID}/comments", "id,text")
+          if comentarios is None:
+              raise SystemExit("COMENTARIOS: falha na consulta de leitura; nao tentar escrita")
+          posts = comentarios.get("data", [])
+          if not isinstance(posts, list):
+              raise SystemExit("COMENTARIOS: retorno sem lista, nao tentar escrita")
+          print("COMENTARIOS: leitura autorizada")
+          print("COMENTARIOS: pagina consultada com", len(posts), "registros (sem exibir mensagens)")
+          print("PUBLICACOES OU COMENTARIOS NOVOS: nenhum")
+          PY
