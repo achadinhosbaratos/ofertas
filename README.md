@@ -40,7 +40,7 @@ O bot precisa estar iniciado e ter acesso ao chat privado indicado em `TELEGRAM_
 
 ### Links automáticos de afiliado da Shopee
 
-Quando `SHOPEE_APP_ID` e `SHOPEE_SECRET` estiverem configurados como **Secrets** do GitHub, o bot gera automaticamente links curtos rastreáveis com `generateShortLink`, **mesmo que os produtos venham de `SHOPEE_FEED_URL`**. O vídeo, o registro da oferta, o Telegram e o comentário do Instagram passam a usar o mesmo link gerado. A chamada inclui `subIds` de campanha para identificar o canal de origem.
+Quando `SHOPEE_APP_ID` e `SHOPEE_SECRET` estiverem configurados como **Secrets** do GitHub, o bot gera automaticamente links curtos rastreáveis com `generateShortLink`, **mesmo que os produtos venham de `SHOPEE_FEED_URL`**. O vídeo, o registro da oferta, o Telegram e o comentário do Instagram passam a usar o mesmo link gerado. A chamada inclui `subIds` de campanha para rastreamento (o mesmo link também pode ser usado no site e no Telegram).
 
 Se a API recusar a criação de um link, o bot não substitui silenciosamente por URL sem tracking. As credenciais precisam ser liberadas pela Shopee para uso da Open API. Para manter a operação atual do feed enquanto configura a API, os segredos podem permanecer ausentes; nesse caso a geração antiga permanece, mas um link sem atribuição verificada **não é usado nos comentários automáticos**.
 
