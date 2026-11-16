@@ -1,6 +1,30 @@
 [
  {
   "tipo": "promo",
+  "data": "2026-11-16",
+  "palavra": "fone bluetooth",
+  "metrica": "curtidas",
+  "produto": {
+   "id": "22497465785",
+   "url": "https://shopee.com.br/product/1155571749/22497465785",
+   "nome": "H'maston RS-29 Fone De Ouvido Bluetooth Gamer Sem Fio Com Led Original jogo e música",
+   "nome_curto": "Fone bluetooth gamer H'maston",
+   "preco": 59.99,
+   "preco_cheio": 158.0,
+   "desconto": 0.6203164556962025,
+   "imagem": "https://cf.shopee.com.br/file/br-11134207-7r98o-lulhrhe08rkk9d",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F1155571749%2F22497465785",
+   "nota": 4.84,
+   "pop": 30493,
+   "beneficios": [
+    "Tecnologia Bluetooth V5.3",
+    "Bateria para 6 horas",
+    "Alcance de 15 metros"
+   ]
+  }
+ },
+ {
+  "tipo": "promo",
   "data": "2026-11-15",
   "palavra": "mini processador",
   "metrica": "curtidas",
