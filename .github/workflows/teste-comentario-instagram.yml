@@ -1,0 +1,48 @@
+name: Instagram - teste único de comentário com link
+
+on:
+  push:
+    branches:
+      - "gabriellwalter/Dio.desafio.github"
+    paths:
+      - ".github/workflows/teste-comentario-instagram.yml"
+  workflow_dispatch:
+    inputs:
+      comentar:
+        type: boolean
+        default: false
+        required: true
+        description: "Postar UM comentario publico só com URL no Reel de teste?"
+      confirmacao:
+        type: string
+        default: ""
+        required: false
+        description: "Para publicar, digite exatamente COMENTAR 1 LINK"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: comentario-controlado-instagram
+  cancel-in-progress: false
+
+jobs:
+  comentario:
+    runs-on: ubuntu-latest
+    environment: github-pages
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -q requests
+      - name: Validar link e comentários; escrever apenas com autorização explícita
+        env:
+          INSTAGRAM_TOKEN: ${{ secrets.INSTAGRAM_TOKEN }}
+          INSTAGRAM_AUTH_MODE: ${{ vars.INSTAGRAM_AUTH_MODE }}
+          INSTAGRAM_USER_ID: ${{ vars.INSTAGRAM_USER_ID }}
+          INSTAGRAM_PUBLICAR: 'nao'
+          TESTE_COMENTAR: ${{ inputs.comentar }}
+          TESTE_CONFIRMACAO: ${{ inputs.confirmacao }}
+        run: python scripts/teste_comentario_instagram.py
