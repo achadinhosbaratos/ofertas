@@ -7,6 +7,7 @@ import datetime as dt
 import hashlib
 import html
 import json
+import os
 import re
 import urllib.parse
 from pathlib import Path
@@ -188,8 +189,14 @@ def render_card(item):
 
 
 def render_site(offers, *, title="Achadinhos Baratos", subtitle="Ofertas selecionadas da Shopee",
-                telegram="", whatsapp="", max_offers=40):
+                telegram="", whatsapp="", max_offers=40, analytics_id=None):
     products = prepare_offers(offers, max_offers=max_offers)
+    if analytics_id is None:
+        analytics_id = os.getenv("SITE_GA4_ID", "")
+    analytics_id = str(analytics_id or "").strip().upper()
+    # GA4 Measurement ID é público, mas nunca incorporar JS arbitrário no site.
+    if not re.fullmatch(r"G-[A-Z0-9]{5,20}", analytics_id):
+        analytics_id = ""
     css = (HERE / "vitrine.css").read_text(encoding="utf-8")
     js = (HERE / "vitrine.js").read_text(encoding="utf-8")
     # A aplicação é totalmente estática: nenhuma variável do feed entra no JS.
@@ -215,12 +222,12 @@ def render_site(offers, *, title="Achadinhos Baratos", subtitle="Ofertas selecio
 <title>{esc(title)} — Achados e Ofertas</title>
 <style>{css}</style>
 </head>
-<body>
+<body data-ga4-id="{esc(analytics_id)}">
 <div class="topline">🛍️ Descubra produtos com preços registrados e links diretos para a Shopee</div>
 <header class="site-header">
   <div class="wrap header-inner">
     <a class="brand" href="#inicio" aria-label="Achadinhos Baratos - início"><span class="brand-mark" aria-hidden="true">⚡</span><span>Achadinhos <span>Baratos</span></span></a>
-    <nav class="header-links" aria-label="Links rápidos">{social_nav}<button type="button" class="header-share" data-share-site>↗ Compartilhar</button></nav>
+    <nav class="header-links" aria-label="Links rápidos">{social_nav}<a class="header-find" href="#busca">⌕ Buscar</a><button type="button" class="header-share" data-share-site>↗ Compartilhar</button></nav>
   </div>
 </header>
 <main class="wrap" id="inicio">
@@ -246,6 +253,11 @@ def render_site(offers, *, title="Achadinhos Baratos", subtitle="Ofertas selecio
     <div class="section-heading">
       <div><h2 id="ofertas-titulo">Garimpe seus achadinhos <span aria-hidden="true">✨</span></h2>
       <p>Encontre o que procura no seu ritmo, pelo celular ou computador.</p></div>
+    </div>
+    <div class="quick-actions" role="group" aria-label="Atalhos de ofertas">
+      <button type="button" class="quick-btn" data-quick="recentes" aria-pressed="true">🆕 Mais recentes</button>
+      <button type="button" class="quick-btn" data-quick="ate50" aria-pressed="false">💰 Até R$ 50</button>
+      <button type="button" class="quick-btn" data-quick="descontos" aria-pressed="false">🔥 Maiores descontos</button>
     </div>
     <div class="filters" aria-label="Filtros de produtos">
       <div class="filter-top">
@@ -284,10 +296,16 @@ def render_site(offers, *, title="Achadinhos Baratos", subtitle="Ofertas selecio
     <div><h2>⚡ {esc(title)}</h2><p>Este site divulga links de afiliado e pode receber comissão por compras qualificadas, sem custo adicional para você.</p>
     <p>Os preços foram registrados nas datas indicadas e podem mudar sem aviso. Confirme o valor, frete e disponibilidade na Shopee antes de comprar.</p></div>
     <div><h2>Espalhe os achadinhos</h2><p>Gostou das ofertas? Compartilhe com amigos e familiares!</p>
-    <button type="button" class="header-share" data-share-site>↗ Compartilhar página</button></div>
+    <button type="button" class="header-share" data-share-site>↗ Compartilhar página</button>
+    <div><button type="button" id="privacy-settings" class="privacy-link" {'hidden' if not analytics_id else ''}>Privacidade e métricas</button></div></div>
   </div>
 </footer>
 <div id="feedback" class="toast" role="status" aria-live="polite" hidden></div>
+<div id="analytics-banner" class="analytics-banner" role="region" aria-label="Preferência de métricas" hidden>
+  <p>Podemos usar métricas de navegação para saber quais ofertas recebem mais cliques? Só ativaremos após seu consentimento.</p>
+  <div><button type="button" id="analytics-accept">Aceitar métricas</button>
+       <button type="button" id="analytics-decline">Não aceitar</button></div>
+</div>
 <script>{js}</script>
 </body></html>"""
 

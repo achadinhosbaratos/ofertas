@@ -61,6 +61,8 @@ jobs:
           test -s site/index.html
           echo "Página anterior restaurada, incluindo diretórios de mídia."
       - name: Gerar somente a nova página a partir de ofertas.json
+        env:
+          SITE_GA4_ID: ${{ vars.SITE_GA4_ID }}
         run: |
           python vitrine.py --source ofertas.json --output site/index.html
           python - <<'PY'

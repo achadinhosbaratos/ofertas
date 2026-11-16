@@ -128,6 +128,35 @@ class VitrineTests(unittest.TestCase):
         self.assertIn("Confira na Shopee", page)
         self.assertNotIn("Referência:", page)
 
+    def test_quick_shortcuts_and_mobile_search_navigation(self):
+        from pathlib import Path
+        page = render_site([self.offer])
+        script = (Path(__file__).resolve().parents[1] / "vitrine.js").read_text(encoding="utf-8")
+        style = (Path(__file__).resolve().parents[1] / "vitrine.css").read_text(encoding="utf-8")
+        for quick in ("recentes", "ate50", "descontos"):
+            self.assertIn('data-quick="' + quick + '"', page)
+            self.assertIn('type === "' + quick + '"', script)
+        self.assertIn('href="#busca"', page)
+        self.assertIn(".hero-side,.stats{display:none}", style)
+        self.assertIn("Atalhos não apagam categorias, favoritos nem buscas", script)
+
+    def test_analytics_is_optional_and_requires_consent(self):
+        from pathlib import Path
+        normal = render_site([self.offer], analytics_id="")
+        enabled = render_site([self.offer], analytics_id="G-ABC1234567")
+        unsafe = render_site([self.offer], analytics_id="G-X<bad>")
+        self.assertIn('data-ga4-id=""', normal)
+        self.assertIn('data-ga4-id=""', unsafe)
+        self.assertIn('data-ga4-id="G-ABC1234567"', enabled)
+        self.assertIn('id="analytics-banner"', enabled)
+        self.assertIn('id="privacy-settings"', enabled)
+        script = (Path(__file__).resolve().parents[1] / "vitrine.js").read_text(encoding="utf-8")
+        self.assertIn('if (!analyticsId || analyticsStarted) return;', script)
+        self.assertIn('analyticsBanner.hidden = false', script)
+        self.assertIn('if (!analyticsEnabled || typeof window.gtag !== "function") return;', script)
+        self.assertIn('track("select_item"', script)
+        self.assertIn('window.gtag("config", analyticsId)', script)
+
     def test_shopee_url_whitelist(self):
         self.assertEqual(safe_shopee("http://shopee.com.br/a"), "")
         self.assertEqual(safe_shopee("https://not-shopee.com.br/a"), "")

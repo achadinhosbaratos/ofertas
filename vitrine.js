@@ -11,6 +11,7 @@
   const chips = Array.from(document.querySelectorAll(".category-chip"));
   const clearButtons = Array.from(document.querySelectorAll("[data-clear]"));
   const status = document.getElementById("feedback");
+  const quickButtons = Array.from(document.querySelectorAll("[data-quick]"));
   let category = "Todas";
   let onlyFavorites = false;
 
@@ -87,6 +88,13 @@
     const favoriteChip = document.getElementById("favorites-filter");
     favoriteChip.setAttribute("aria-pressed", String(onlyFavorites));
     favoriteChip.textContent = onlyFavorites ? "♥ Só favoritos" : "♡ Meus favoritos";
+    quickButtons.forEach(button => {
+      const type = button.dataset.quick;
+      const selected = (type === "recentes" && sort.value === "recentes")
+        || (type === "ate50" && price.value === "50")
+        || (type === "descontos" && sort.value === "desconto");
+      button.setAttribute("aria-pressed", String(selected));
+    });
     const summary = document.getElementById("active-filters");
     if (summary) {
       summary.replaceChildren();
@@ -135,6 +143,14 @@
   }
 
   [search,price,discount,sort].forEach(el => el.addEventListener(el === search ? "input" : "change", apply));
+  quickButtons.forEach(button => button.addEventListener("click", () => {
+    const type = button.dataset.quick;
+    if (type === "recentes") sort.value = "recentes";
+    if (type === "ate50") price.value = price.value === "50" ? "" : "50";
+    if (type === "descontos") sort.value = sort.value === "desconto" ? "recentes" : "desconto";
+    // Atalhos não apagam categorias, favoritos nem buscas existentes.
+    apply();
+  }));
   chips.filter(button => button.dataset.category).forEach(button => button.addEventListener("click", () => {
     category = button.dataset.category;
     // A categoria não modifica o filtro de favoritos (e vice-versa).
@@ -229,10 +245,12 @@
     menu.querySelector(".share-whatsapp").addEventListener("click", () => {
       const message = productName + " — " + card.querySelector(".price").textContent +
         " (preço sujeito a alteração). Veja na Shopee: " + link;
+      track("share", { method: "whatsapp", content_type: "product", item_id: card.id });
       window.open("https://wa.me/?text=" + encodeURIComponent(message), "_blank", "noopener,noreferrer");
       closeShares();
     });
     menu.querySelector(".share-copy").addEventListener("click", () => {
+      track("share", { method: "copy", content_type: "product", item_id: card.id });
       copyLink(link);
       closeShares();
     });
@@ -244,6 +262,65 @@
   document.querySelectorAll("[data-share-site]").forEach(button => {
     button.addEventListener("click", () => share("Achadinhos Baratos — encontre ofertas", location.href));
   });
+
+  // Medição opcional e privada: nenhum serviço é carregado sem ID GA4 válido
+  // e aceite explícito do visitante. GitHub Pages não tem banco de contagem.
+  const analyticsId = document.body.dataset.ga4Id || "";
+  const analyticsBanner = document.getElementById("analytics-banner");
+  const analyticsSettings = document.getElementById("privacy-settings");
+  const analyticsKey = "achadinhos-metricas-consent-v1";
+  let analyticsEnabled = false;
+  let analyticsStarted = false;
+
+  function startAnalytics() {
+    if (!analyticsId || analyticsStarted) return;
+    analyticsStarted = true;
+    analyticsEnabled = true;
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = function() { window.dataLayer.push(arguments); };
+    window.gtag("js", new Date());
+    window.gtag("config", analyticsId);
+    const script = document.createElement("script");
+    script.async = true;
+    script.src = "https://www.googletagmanager.com/gtag/js?id=" + encodeURIComponent(analyticsId);
+    document.head.appendChild(script);
+  }
+  function setAnalyticsConsent(allow) {
+    analyticsBanner.hidden = true;
+    analyticsEnabled = !!allow;
+    try { localStorage.setItem(analyticsKey, allow ? "sim" : "nao"); } catch (_) {}
+    if (allow) startAnalytics();
+    else if (analyticsStarted && typeof window.gtag === "function") {
+      window.gtag("consent", "update", {analytics_storage: "denied"});
+    }
+  }
+  if (analyticsId && analyticsBanner) {
+    let choice = null;
+    try { choice = localStorage.getItem(analyticsKey); } catch (_) {}
+    if (choice === "sim") startAnalytics();
+    else if (choice === null) analyticsBanner.hidden = false;
+    document.getElementById("analytics-accept").addEventListener("click", () => setAnalyticsConsent(true));
+    document.getElementById("analytics-decline").addEventListener("click", () => setAnalyticsConsent(false));
+    if (analyticsSettings) analyticsSettings.addEventListener("click", () => { analyticsBanner.hidden = false; });
+  }
+  function track(eventName, params) {
+    if (!analyticsEnabled || typeof window.gtag !== "function") return;
+    try { window.gtag("event", eventName, params); } catch (_) { /* Clique nunca bloqueado */ }
+  }
+  document.querySelectorAll(".shop-link").forEach(link => link.addEventListener("click", () => {
+    const card = link.closest(".card");
+    track("select_item", {
+      item_list_name: "achadinhos_vitrine",
+      currency: "BRL",
+      items: [{
+        item_id: card.id.replace(/^oferta-/, ""),
+        item_name: card.querySelector("h3").textContent,
+        item_category: card.dataset.category,
+        price: Number(card.dataset.price || 0),
+        quantity: 1
+      }]
+    });
+  }));
 
   // A âncora compartilhada pode apontar para um item filtrado. Revela e destaca.
   if (location.hash && location.hash.startsWith("#oferta-")) {

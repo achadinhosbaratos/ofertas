@@ -72,6 +72,7 @@ jobs:
 
       - name: Rodar o robô
         env:
+          SITE_GA4_ID: ${{ vars.SITE_GA4_ID }}
           SHOPEE_FEED_URL: ${{ secrets.SHOPEE_FEED_URL }}
           SHOPEE_APP_ID: ${{ secrets.SHOPEE_APP_ID }}
           SHOPEE_SECRET: ${{ secrets.SHOPEE_SECRET }}
