@@ -321,7 +321,7 @@ class ShopeeShortLinkTests(unittest.TestCase):
         self.assertEqual(result, "https://s.shopee.com.br/5fqN0uKYWz")
         api.assert_called_once_with(
             "https://shopee.com.br/product/1655406395/58272181410",
-            ["instagram", "robo", "20261116"],
+            ["robo", "20261116"],
         )
 
     def test_original_url_from_an_redir(self):
