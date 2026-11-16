@@ -305,5 +305,44 @@ class InstagramLinkCommentTests(unittest.TestCase):
             api.assert_not_called()
 
 
+class ShopeeShortLinkTests(unittest.TestCase):
+    def setUp(self):
+        self.product = {
+            "url": "https://shopee.com.br/product/1655406395/58272181410",
+            "oferta": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F1655406395%2F58272181410",
+        }
+
+    def test_generate_affiliate_short_link_from_csv_product(self):
+        with mock.patch.object(bot, "APP_ID", "app-id"), \
+             mock.patch.object(bot, "SECRET", "secret"), \
+             mock.patch.object(bot, "MODO_TESTE", False), \
+             mock.patch.object(bot, "link_curto", return_value="https://s.shopee.com.br/5fqN0uKYWz") as api:
+            result = bot.obter_link(self.product, True, ["robo", "20261116"])
+        self.assertEqual(result, "https://s.shopee.com.br/5fqN0uKYWz")
+        api.assert_called_once_with(
+            "https://shopee.com.br/product/1655406395/58272181410",
+            ["robo", "20261116"],
+        )
+
+    def test_original_url_from_an_redir(self):
+        p = {"url": "", "oferta": self.product["oferta"]}
+        self.assertEqual(bot.url_original_shopee(p), self.product["url"])
+
+    def test_api_failure_never_falls_back_to_untracked_url(self):
+        with mock.patch.object(bot, "APP_ID", "app-id"), \
+             mock.patch.object(bot, "SECRET", "secret"), \
+             mock.patch.object(bot, "MODO_TESTE", False), \
+             mock.patch.object(bot, "link_curto", side_effect=RuntimeError("API recusada")):
+            with self.assertRaisesRegex(RuntimeError, "API recusada"):
+                bot.obter_link(self.product, True, ["robo"])
+
+    def test_without_api_preserves_feed_compatibility(self):
+        with mock.patch.object(bot, "APP_ID", ""), \
+             mock.patch.object(bot, "SECRET", ""), \
+             mock.patch.object(bot, "MODO_TESTE", False), \
+             mock.patch.object(bot, "AFILIADO_ID", ""):
+            self.assertEqual(bot.obter_link(self.product, True, ["robo"]), self.product["oferta"])
+
+
 if __name__ == "__main__":
     unittest.main()

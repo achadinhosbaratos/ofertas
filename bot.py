@@ -3818,14 +3818,61 @@ def com_afiliado(link, sub):
     return link + ("&" if "?" in link else "?") + extra
 
 
-def obter_link(p, usar_feed, sub):
-    if MODO_TESTE or usar_feed:
-        return com_afiliado(p["oferta"], sub)
+def url_original_shopee(p):
+    """Extrai o URL do produto do feed, sem usar redirecionador de outro afiliado.
+
+    `product_link` do feed pode vir como link longo do produto. O endereço
+    `an_redir` é usado apenas como fonte do `origin_link` original.
+    """
+    candidatos = [p.get("url") or ""]
+    oferta = p.get("oferta") or ""
     try:
-        return link_curto(p["url"], sub)
-    except Exception as e:
-        print(f"  (link curto falhou, usando link de oferta: {e})")
-        return p["oferta"]
+        u = urllib.parse.urlsplit(oferta)
+        if u.hostname == "shope.ee" and u.path.rstrip("/") == "/an_redir":
+            candidatos.append(urllib.parse.parse_qs(u.query).get("origin_link", [""])[0])
+        else:
+            candidatos.append(oferta)
+    except ValueError:
+        pass
+    for c in candidatos:
+        if not c or any(ch.isspace() for ch in c):
+            continue
+        try:
+            u = urllib.parse.urlsplit(c)
+        except ValueError:
+            continue
+        if (u.scheme == "https" and (u.hostname or "").lower() in
+                ("shopee.com.br", "www.shopee.com.br") and u.path and
+                not u.username and not u.password):
+            return c
+    return ""
+
+
+def obter_link(p, usar_feed, sub):
+    """Prioriza a API oficial para associar o link à conta do afiliado.
+
+    Com o feed sozinho, NÃO é possível garantir atribuição ao afiliado.
+    Se as credenciais da API existirem, a geração deve ter sucesso; nunca
+    substituir silenciosamente um link rastreável por link cru.
+    """
+    if MODO_TESTE:
+        return com_afiliado(p.get("oferta") or "", sub)
+    if APP_ID and SECRET:
+        origem = url_original_shopee(p)
+        if not origem:
+            raise RuntimeError("Produto não possui URL original da Shopee para gerar link de afiliado")
+        resultado = link_curto(origem, list(sub)[:5])
+        try:
+            u = urllib.parse.urlsplit(resultado)
+        except ValueError:
+            raise RuntimeError("Shopee retornou link inválido") from None
+        if (u.scheme != "https" or (u.hostname or "").lower() not in
+                ("s.shopee.com.br", "shope.ee") or not u.path):
+            raise RuntimeError("Shopee API não retornou link curto oficial")
+        return resultado
+    # Compatibilidade com o feed atual. O comentário automático só aceitará
+    # um link rastreável; não publica URLs 'an_redir' sem affiliate_id.
+    return com_afiliado(p.get("oferta") or "", sub)
 
 
 def aviso_link(link, usar_feed):

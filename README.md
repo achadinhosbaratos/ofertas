@@ -38,6 +38,14 @@ Nunca coloque tokens ou chaves diretamente no código, issues ou logs.
 
 O bot precisa estar iniciado e ter acesso ao chat privado indicado em `TELEGRAM_CHAT_ID`. Para publicar em um canal, adicione o bot como administrador com permissão de publicar mensagens. Um erro 403 no canal não é resolvido alterando o código: é preciso corrigir a associação/permissão do bot no próprio Telegram.
 
+### Links automáticos de afiliado da Shopee
+
+Quando `SHOPEE_APP_ID` e `SHOPEE_SECRET` estiverem configurados como **Secrets** do GitHub, o bot gera automaticamente links curtos rastreáveis com `generateShortLink`, **mesmo que os produtos venham de `SHOPEE_FEED_URL`**. O vídeo, o registro da oferta, o Telegram e o comentário do Instagram passam a usar o mesmo link gerado. A chamada inclui `subIds` de campanha para rastreamento (o mesmo link também pode ser usado no site e no Telegram).
+
+Se a API recusar a criação de um link, o bot não substitui silenciosamente por URL sem tracking. As credenciais precisam ser liberadas pela Shopee para uso da Open API. Para manter a operação atual do feed enquanto configura a API, os segredos podem permanecer ausentes; nesse caso a geração antiga permanece, mas um link sem atribuição verificada **não é usado nos comentários automáticos**.
+
+**Não use** `SHOPEE_AFFILIATE_ID` como substituto de `SHOPEE_APP_ID` e `SHOPEE_SECRET`: são conceitos diferentes. Nunca coloque seu segredo no README ou no código.
+
 ### Instagram — novo Unified Login (SUAT)
 
 A publicação exige conta profissional, app Meta e token com as permissões `instagram_basic` e `instagram_content_publish` para a conta de Instagram conectada.
