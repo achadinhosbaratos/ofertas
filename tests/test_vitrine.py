@@ -71,17 +71,21 @@ class VitrineTests(unittest.TestCase):
         self.assertIn("Preço registrado em 15/11/2026", page)
         self.assertIn("podem mudar sem aviso", page)
 
-    def test_favorites_navigation_resets_previous_filters(self):
-        """A aba Favoritos não pode depender da categoria ou busca anterior."""
+    def test_favorites_and_categories_can_be_combined(self):
+        """Fav é filtro adicional e não deve apagar categoria ou controles."""
         from pathlib import Path
         script = (Path(__file__).resolve().parents[1] / "vitrine.js").read_text(encoding="utf-8")
-        self.assertIn('category = "Todas";', script)
-        self.assertIn("const activating = !onlyFavorites;", script)
-        self.assertIn('search.value = "";', script)
-        self.assertIn('price.value = "";', script)
-        self.assertIn('discount.value = "";', script)
-        self.assertIn("onlyFavorites = false;", script)
-        self.assertIn("Você ainda não salvou favoritos.", script)
+        page = render_site([self.offer, self.comparison])
+        self.assertIn('onlyFavorites = !onlyFavorites;', script)
+        self.assertIn('category = button.dataset.category;', script)
+        self.assertIn('(!onlyFavorites || favorites.has(card.id))', script)
+        self.assertIn('category === "Todas" || card.dataset.category === category', script)
+        self.assertNotIn('const activating = !onlyFavorites;', script)
+        self.assertNotIn('onlyFavorites = false;\n    apply();\n  }));', script)
+        self.assertIn('id="active-filters"', page)
+        self.assertIn('id="all-favorites"', page)
+        self.assertIn('Você ainda não salvou favoritos.', script)
+        self.assertIn('Nenhum favorito corresponde aos filtros.', script)
 
     def test_shopee_url_whitelist(self):
         self.assertEqual(safe_shopee("http://shopee.com.br/a"), "")
