@@ -34,6 +34,8 @@ from pathlib import Path
 import requests
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
+from video_ia import DURACAO_CLIPE, gerar_clipe_omni, reservar_geracao
+
 # ============================================================
 # CONFIGURAÇÃO  (pode editar à vontade pelo GitHub)
 # ============================================================
@@ -118,6 +120,7 @@ SAIDA = PASTA / "saida"
 HISTORICO = PASTA / "historico.json"
 OFERTAS = PASTA / "ofertas.json"
 FILA = PASTA / "fila.json"          # produtos do dia esperando o clipe do Flow
+GERACOES_VIDEO_IA = PASTA / "video_ia.json"
 REDES = PASTA / "redes.json"        # vídeos pra postar nas redes (Instagram) e a validade da chave
 SITE = PASTA / "site"
 W, H = 1080, 1920
@@ -2169,10 +2172,8 @@ CLIPE_TRECHOS_DE = [0.45, 0.2, 0.65, 0.3]   # de onde saem os trechos (fração 
 CLIPE_FOTO_FINAL = 2.5      # com clipe: segundos de foto do produto no final (chamada + Lupi apontando)
 
 
-def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd, clipe=None):
-    """clipe: vídeo do Flow (o produto sendo usado). Quando tem, ele é o vídeo quase todo: toca inteiro
-    no começo com o preço em cima desde o primeiro quadro; se a fala for mais longa, repete trechos dele
-    com zoom; a foto do produto e o Lupi só aparecem na chamada final. Sem clipe: fotos e o Lupi."""
+def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd, clipe=None, *, repetir_clipe=True):
+    """Abre com o clipe do produto, quando disponível, e completa o vídeo com as fotos e o Lupi."""
     fps = 30
     pct = round(p["desconto"] * 100)
 
@@ -2226,6 +2227,8 @@ def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd, cli
         leitor = LeitorClipe(clipe, fps)
         ini_cta = next((s["ini"] for s in secoes if s["secao"] == "cta"), total)
         fim_clipe = min(total, max(ini_cta, total - CLIPE_FOTO_FINAL))
+        if not repetir_clipe:
+            fim_clipe = min(fim_clipe, leitor.dur)
         sobra = fim_clipe - leitor.dur
         if 0 < sobra < 0.8:
             ritmo_clipe = leitor.dur / fim_clipe          # falta pouco: o clipe toca um tiquinho mais devagar
@@ -2445,9 +2448,58 @@ def _slug(palavra):
     return re.sub(r"[^a-z0-9]+", "-", sem_acento(palavra).lower()).strip("-")
 
 
+def _clipe_automatico(item, fotos, pasta):
+    if MODO_TESTE or USAR_FLOW or not USAR_IA:
+        return None
+    try:
+        limite = int(os.environ.get("VIDEO_IA_MAX_POR_DIA") or "0")
+    except ValueError:
+        print("  vídeo IA: VIDEO_IA_MAX_POR_DIA deve ser um número inteiro.")
+        return None
+    if limite <= 0:
+        return None
+    chave = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not chave:
+        print("  vídeo IA: falta o segredo GEMINI_API_KEY. Usando as fotos.")
+        return None
+
+    try:
+        if not reservar_geracao(GERACOES_VIDEO_IA, item["produto"]["id"], limite):
+            return None
+        ficha = ficha_flow(item["produto"], fotos, segundos=DURACAO_CLIPE)
+        if not ficha:
+            print("  vídeo IA: não foi possível extrair uma cena de uso das fotos. Usando as fotos.")
+            return None
+        refs = [fotos[i] for i in ficha["fotos"]] if ficha["fotos"] else fotos
+        detalhes = "; ".join(ficha["detalhes"])
+        prompt = (
+            f"One continuous close-up of adult hands using the exact item in the supplied photos, "
+            f"{ficha['cenario']}. {_ponto(ficha['acao'])} {_ponto(ficha['enquadramento'])} "
+            f"Keep these visible product details unchanged: {detalhes}. "
+            "Show one simple, physically plausible use of the item. Keep its shape, color and attachments "
+            "identical to the references in every frame. Use natural light and keep the product near the center, "
+            "with space above for a price card. No face, added text, price, new logos, extra product parts, "
+            "dialogue, or invented performance claims."
+        )
+        imagens = [_jpeg_b64(foto) for foto in refs]
+        destino = gerar_clipe_omni(chave, prompt, imagens, pasta / "clipe-ia.mp4")
+        conferir = {**item, "ficha": ficha}
+        aprovado, motivo = conferir_produto(destino, conferir, pasta, refs=fotos)
+        if aprovado:
+            print("  vídeo IA: clipe gerado e conferido com as fotos do anúncio.")
+            return destino
+        destino.unlink(missing_ok=True)
+        print(f"  vídeo IA: conferência rejeitou o clipe ({motivo}). Usando as fotos.")
+    except requests.HTTPError as e:
+        status = e.response.status_code if e.response is not None else "desconhecido"
+        print(f"  vídeo IA: Gemini respondeu HTTP {status}. Usando as fotos.")
+    except (requests.RequestException, OSError, RuntimeError, ValueError, TypeError, subprocess.SubprocessError) as e:
+        print(f"  vídeo IA: falha ao gerar ou conferir ({type(e).__name__}). Usando as fotos.")
+    return None
+
+
 def produzir_video(item, pasta_dia, rnd, clipe=None):
-    """Monta o vídeo de um produto já escolhido. item: produto, ia, link, palavra, titulo, fotos_ref.
-    clipe: vídeo do Flow (opcional), usado até a chamada final."""
+    """Monta o vídeo de um produto já escolhido, usando um clipe recebido ou gerado quando disponível."""
     p, ia, link, palavra, nome = item["produto"], item["ia"], item["link"], item["palavra"], item["titulo"]
     pct = round(p["desconto"] * 100)
     slug = _slug(palavra)
@@ -2466,9 +2518,19 @@ def produzir_video(item, pasta_dia, rnd, clipe=None):
         f1, f2 = f2, f1          # a foto mais limpa vira a principal (preço, chamada e capa)
     falas = roteiro_tela_verde(p, ia, palavra, rnd)
     video = pasta_dia / f"{slug}.mp4"
-    montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, video, rnd, clipe=clipe)
+    clipe_automatico = _clipe_automatico(item, fotos, pasta) if clipe is None else None
+    try:
+        montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, video, rnd,
+                               clipe=clipe or clipe_automatico, repetir_clipe=clipe_automatico is None)
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as e:
+        if clipe_automatico is None:
+            raise
+        print(f"  vídeo IA: montagem com clipe falhou ({type(e).__name__}). Usando as fotos.")
+        clipe_automatico = None
+        montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, video, rnd)
+    clipe = clipe or clipe_automatico
     dialogo = "\n".join(f"{'Lupi' if x['quem'] == 'lupi' else 'Amiga'}: {x['fala']}" for x in falas)
-    resumo = (f"🎬 {nome} — pronto pra postar" + (" (com o clipe do Flow)" if clipe else "") + "\n"
+    resumo = (f"🎬 {nome} — pronto pra postar" + (" (com cena gerada por IA)" if clipe else "") + "\n"
               f"De {reais(p['preco_cheio'])} por {reais(p['preco'])} (-{pct}%)\n"
               + aviso_link(link, bool(FEED_URLS)) + f"\n{dialogo}")
     return {"titulo": nome, "video": video, "resumo": resumo,
@@ -2546,7 +2608,7 @@ def _validar_ficha(d, n_fotos):
     return out
 
 
-def ficha_flow(p, fotos):
+def ficha_flow(p, fotos, *, segundos=8):
     """A IA olha as fotos e diz o que não pode mudar no produto e qual cena mostra isso."""
     pedido = (
         f"Produto: {p['nome']}\nDescrição do vendedor (pode estar bagunçada): {p.get('descricao', '')[:800]}\n"
@@ -2558,7 +2620,7 @@ def ficha_flow(p, fotos):
         'that wraps over the top of the ear";\n'
         '"detalhes_pt": a mesma lista em português, bem curta (ex.: "gancho curvo atrás da orelha");\n'
         '"cenario": em inglês, onde a cena acontece, começando com "in" ou "on" (ex.: "in a park at sunrise");\n'
-        '"acao": em inglês, uma ação simples e contínua de 8 segundos com as mãos de uma pessoa usando o produto, '
+        f'"acao": em inglês, uma ação simples e contínua de {segundos} segundos com as mãos de uma pessoa usando o produto, '
         'que mostre os detalhes acima em close; escreva "this exact" antes do nome do produto; até 45 palavras;\n'
         '"enquadramento": em inglês, como a câmera mostra a cena, sempre com o rosto fora da imagem '
         '(ex.: "Close-up on the hands, face not visible.");\n'
@@ -2815,15 +2877,16 @@ def quadros_do_clipe(caminho, fracoes=(0.2, 0.5, 0.85)):
     return quadros
 
 
-def conferir_produto(caminho, item, pasta):
-    """A IA compara os quadros do clipe com as fotos reais. Devolve (aprovado, motivo).
-    Se a IA não responder, aprova (você já conferiu antes de mandar)."""
+def conferir_produto(caminho, item, pasta, *, refs=None):
+    """Compara o clipe com o anúncio. Fotos fornecidas pelo robô exigem uma aprovação explícita."""
+    automatico = refs is not None
     if MODO_TESTE or not USAR_IA:
-        return True, "conferência da IA pulada (modo teste)"
-    _, refs = _baixar_fotos(item["fotos_ref"], pasta, f"conf{item['numero']}_")
+        return not automatico, "conferência da IA indisponível"
+    if refs is None:
+        _, refs = _baixar_fotos(item["fotos_ref"], pasta, f"conf{item['numero']}_")
     quadros = quadros_do_clipe(caminho)
-    if not refs or not quadros:
-        return True, "não deu pra comparar com as fotos"
+    if not refs or len(quadros) < (3 if automatico else 1):
+        return not automatico, "não deu pra comparar com as fotos"
     detalhes = item["ficha"].get("detalhes_pt") or item["ficha"].get("detalhes") or []
     pedido = (f"As {len(refs)} primeiras imagens são fotos reais do produto \"{item['titulo']}\". "
               f"As {len(quadros)} seguintes são quadros de um vídeo gerado por IA.\n"
@@ -2832,6 +2895,12 @@ def conferir_produto(caminho, item, pasta):
               "formato, faltando uma peça característica ou de outra cor. Ignore cenário, pessoa, luz, ângulo e "
               "letras ou logos pequenos.\n"
               'Devolva JSON: {"aprovado": true ou false, "motivo": "frase curta em português"}')
+    if automatico:
+        descricao = limpar_texto(item["produto"].get("descricao"), 450)
+        pedido += (f"\nDescrição do anúncio: {descricao}.\n"
+                   "Aprove apenas se os quadros permitirem confirmar a correspondência do produto. "
+                   "Reprove se houver dúvida sobre o modelo, variante ou peças, ou se o gesto mostrado "
+                   "depender de uma função incompatível com as fotos e a descrição.")
     texto = chamar_ia([{"role": "system", "content": "Você confere se um vídeo gerado por IA mostra o mesmo "
                                                      "produto das fotos reais de um anúncio. Responda apenas "
                                                      "com um objeto JSON."},
@@ -2839,9 +2908,11 @@ def conferir_produto(caminho, item, pasta):
     m = re.search(r"\{.*\}", texto or "", re.S)
     try:
         d = json.loads(m.group(0))
-    except Exception:
-        return True, "a IA não respondeu, então não deu pra conferir"
-    ok = d.get("aprovado") is True or str(d.get("aprovado")).lower() == "true"
+    except (AttributeError, ValueError):
+        d = None
+    if not isinstance(d, dict):
+        return not automatico, "a IA não devolveu uma conferência válida"
+    ok = d.get("aprovado") is True or (not automatico and str(d.get("aprovado")).lower() == "true")
     motivo = limpar_texto(d.get("motivo"), 160) or ("o produto saiu igual às fotos" if ok
                                                     else "o produto saiu diferente das fotos")
     return ok, motivo

@@ -80,7 +80,8 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_CANAL: ${{ secrets.TELEGRAM_CANAL }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}   # IA do Google que escreve os roteiros
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          VIDEO_IA_MAX_POR_DIA: ${{ vars.VIDEO_IA_MAX_POR_DIA }}
           INSTAGRAM_TOKEN: ${{ secrets.INSTAGRAM_TOKEN }}
           INSTAGRAM_AUTH_MODE: ${{ vars.INSTAGRAM_AUTH_MODE }}
           INSTAGRAM_USER_ID: ${{ vars.INSTAGRAM_USER_ID }}
