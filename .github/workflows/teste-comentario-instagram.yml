@@ -43,6 +43,6 @@ jobs:
           INSTAGRAM_AUTH_MODE: ${{ vars.INSTAGRAM_AUTH_MODE }}
           INSTAGRAM_USER_ID: ${{ vars.INSTAGRAM_USER_ID }}
           INSTAGRAM_PUBLICAR: 'nao'
-          TESTE_COMENTAR: ${{ github.event_name == 'push' && 'true' || inputs.comentar }}
-          TESTE_CONFIRMACAO: ${{ github.event_name == 'push' && 'COMENTAR 1 LINK' || inputs.confirmacao }}
+          TESTE_COMENTAR: ${{ inputs.comentar }}
+          TESTE_CONFIRMACAO: ${{ inputs.confirmacao }}
         run: python scripts/teste_comentario_instagram.py
