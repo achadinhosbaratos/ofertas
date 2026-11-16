@@ -22,6 +22,18 @@
     } catch (_) { return new Set(); }
   };
   let favorites = getFavorites();
+  // Migra favoritos marcados na versão anterior sem descartar IDs antigos.
+  let migrated = false;
+  cards.forEach(card => {
+    if (card.dataset.legacyId && favorites.has(card.dataset.legacyId) && !favorites.has(card.id)) {
+      favorites.add(card.id);
+      migrated = true;
+    }
+  });
+  if (migrated) {
+    try { localStorage.setItem("achadinhos-favoritos-v2", JSON.stringify([...favorites])); }
+    catch (_) { /* A migração continua válida na aba atual. */ }
+  }
 
   function notice(message) {
     status.textContent = message;
@@ -77,13 +89,27 @@
     favoriteChip.textContent = onlyFavorites ? "♥ Só favoritos" : "♡ Meus favoritos";
     const summary = document.getElementById("active-filters");
     if (summary) {
+      summary.replaceChildren();
       const active = [];
-      if (category !== "Todas") active.push(category);
-      if (onlyFavorites) active.push("Meus favoritos");
-      if (q) active.push("Busca: " + search.value.trim());
-      if (price.value) active.push("Até R$ " + price.value);
-      if (minDiscount) active.push("Desconto de " + minDiscount + "%");
-      summary.textContent = active.length ? "Filtros ativos: " + active.join(" · ") : "Exibindo todas as categorias";
+      if (category !== "Todas") active.push({ label: "Categoria: " + category, clear: () => { category = "Todas"; } });
+      if (onlyFavorites) active.push({ label: "♥ Favoritos", clear: () => { onlyFavorites = false; } });
+      if (q) active.push({ label: "Busca: " + search.value.trim(), clear: () => { search.value = ""; } });
+      if (price.value) active.push({ label: "Até R$ " + price.value, clear: () => { price.value = ""; } });
+      if (minDiscount) active.push({ label: "Desconto: " + minDiscount + "%+", clear: () => { discount.value = ""; } });
+      if (sort.value !== "recentes") active.push({ label: "Ordem: " + sort.selectedOptions[0].textContent, clear: () => { sort.value = "recentes"; } });
+      if (!active.length) {
+        summary.textContent = "Use os filtros acima para encontrar seu achadinho.";
+      } else {
+        active.forEach(item => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "filter-tag";
+          button.textContent = item.label + " ×";
+          button.setAttribute("aria-label", "Remover filtro " + item.label);
+          button.addEventListener("click", () => { item.clear(); apply(); });
+          summary.append(button);
+        });
+      }
     }
     const favoriteHint = document.getElementById("all-favorites");
     if (favoriteHint) favoriteHint.hidden = !(visible.length === 0 && onlyFavorites && category !== "Todas" && favorites.size > 0);
@@ -146,32 +172,75 @@
     });
   });
 
+  async function copyLink(url) {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(url);
+        notice("Link da Shopee copiado!");
+        return;
+      }
+    } catch (_) { /* oferece campo de cópia abaixo */ }
+    // Fallback compatível com navegadores antigos, sem abrir links externos.
+    const box = document.createElement("textarea");
+    box.value = url;
+    box.style.position = "fixed";
+    box.style.opacity = "0";
+    document.body.append(box);
+    box.select();
+    let copied = false;
+    try { copied = document.execCommand("copy"); } catch (_) {}
+    box.remove();
+    if (copied) notice("Link da Shopee copiado!");
+    else window.prompt("Copie o link do produto:", url);
+  }
+
   async function share(title, url) {
     try {
       if (navigator.share) {
-        await navigator.share({title, url});
+        await navigator.share({ title, url });
         return;
       }
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(url);
-        notice("Link copiado! Agora é só compartilhar.");
-        return;
-      }
+      await copyLink(url);
     } catch (error) {
       if (error && error.name === "AbortError") return;
+      await copyLink(url);
     }
-    const message = encodeURIComponent(title + " " + url);
-    window.open("https://wa.me/?text=" + message, "_blank", "noopener,noreferrer");
+  }
+
+  function closeShares(exception) {
+    document.querySelectorAll(".share-item").forEach(button => {
+      if (button === exception) return;
+      button.setAttribute("aria-expanded", "false");
+      button.closest(".card").querySelector(".share-menu").hidden = true;
+    });
   }
   document.querySelectorAll(".share-item").forEach(button => {
-    button.addEventListener("click", () => {
-      const card = button.closest(".card");
-      const url = new URL(window.location.href);
-      url.search = "";
-      url.hash = card.id;
-      share(card.querySelector("h3").textContent + " — Achadinhos Baratos", url.href);
+    const card = button.closest(".card");
+    const menu = card.querySelector(".share-menu");
+    const link = card.querySelector(".shop-link").href;
+    const productName = card.querySelector("h3").textContent;
+    button.addEventListener("click", event => {
+      event.stopPropagation();
+      const wasOpen = !menu.hidden;
+      closeShares(button);
+      menu.hidden = wasOpen;
+      button.setAttribute("aria-expanded", String(!wasOpen));
+    });
+    menu.querySelector(".share-whatsapp").addEventListener("click", () => {
+      const message = productName + " — " + card.querySelector(".price").textContent +
+        " (preço sujeito a alteração). Veja na Shopee: " + link;
+      window.open("https://wa.me/?text=" + encodeURIComponent(message), "_blank", "noopener,noreferrer");
+      closeShares();
+    });
+    menu.querySelector(".share-copy").addEventListener("click", () => {
+      copyLink(link);
+      closeShares();
     });
   });
+  document.addEventListener("click", event => {
+    if (!event.target.closest(".share-menu") && !event.target.closest(".share-item")) closeShares();
+  });
+  document.addEventListener("keydown", event => { if (event.key === "Escape") closeShares(); });
   document.querySelectorAll("[data-share-site]").forEach(button => {
     button.addEventListener("click", () => share("Achadinhos Baratos — encontre ofertas", location.href));
   });

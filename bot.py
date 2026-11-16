@@ -3562,7 +3562,8 @@ def salvar_ofertas(ofertas):
 def oferta_registro_promo(p, ia, palavra, link):
     return {"tipo": "promo", "data": dt.date.today().isoformat(), "palavra": palavra,
             "metrica": METRICA,
-            "produto": {"nome": nome_curto(p["nome"], 90), "nome_curto": nome_promo(p, ia, palavra),
+            "produto": {"id": str(p.get("id") or ""), "url": p.get("url") or "",
+                        "nome": nome_curto(p["nome"], 90), "nome_curto": nome_promo(p, ia, palavra),
                         "preco": p["preco"], "preco_cheio": p["preco_cheio"],
                         "desconto": p["desconto"], "imagem": p["imagem"], "link": link,
                         "nota": p["nota"], "pop": p["vendas"],
@@ -3592,7 +3593,8 @@ def cartao_promo(o):
 
 def oferta_registro(famoso, barato, palavra, link_f, link_b):
     def item(p, link):
-        return {"nome": nome_curto(p["nome"], 90), "preco": p["preco"], "imagem": p["imagem"],
+        return {"id": str(p.get("id") or ""), "url": p.get("url") or "",
+                "nome": nome_curto(p["nome"], 90), "preco": p["preco"], "imagem": p["imagem"],
                 "link": link, "nota": p["nota"], "pop": p["vendas"]}
     return {"data": dt.date.today().isoformat(), "palavra": palavra, "metrica": METRICA,
             "famoso": item(famoso, link_f), "barato": item(barato, link_b)}

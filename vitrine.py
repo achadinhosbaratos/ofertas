@@ -68,6 +68,41 @@ def safe_image(url):
         return ""
 
 
+def product_identity(product, link):
+    """Identificador do item Shopee independente do link rastreável.
+
+    Recupera shopId/itemId da URL longa, do origin_link de an_redir,
+    ou utiliza o itemId salvo pelo robô na próxima oferta.
+    """
+    def ids_from_url(url):
+        try:
+            parsed = urllib.parse.urlsplit(url or "")
+        except (ValueError, TypeError):
+            return None
+        hostname = (parsed.hostname or "").lower()
+        if parsed.scheme != "https":
+            return None
+        if hostname == "shope.ee" and parsed.path.rstrip("/") == "/an_redir":
+            original = urllib.parse.parse_qs(parsed.query).get("origin_link", [""])[0]
+            return ids_from_url(original)
+        if hostname not in ("shopee.com.br", "www.shopee.com.br"):
+            return None
+        path = urllib.parse.unquote(parsed.path)
+        match = re.search(r"/product/(\d+)/(\d+)(?:/|$)", path)
+        if not match:
+            match = re.search(r"-i\.(\d+)\.(\d+)(?:/|$)", path)
+        return match.groups() if match else None
+
+    details = ids_from_url(product.get("url")) or ids_from_url(link)
+    if details:
+        return "shopee-" + "-".join(details)
+    item_id = str(product.get("id") or "").strip()
+    if item_id.isdecimal():
+        return "item-" + item_id
+    name = re.sub(r"\s+", " ", str(product.get("nome") or "").strip().casefold())
+    return "nome-" + hashlib.sha256(name.encode("utf-8")).hexdigest()[:16]
+
+
 def prepare_offers(offers, max_offers=40):
     records = []
     seen = set()
@@ -82,11 +117,10 @@ def prepare_offers(offers, max_offers=40):
         link = safe_shopee(product.get("link"))
         if not name or not link:
             continue
-        # Dedup pelo URL do item, com nome como fallback para produtos repetidos.
-        key = re.sub(r"\\s+", " ", name.casefold())
-        if key in seen:
+        identity = product_identity(product, link)
+        if identity in seen:
             continue
-        seen.add(key)
+        seen.add(identity)
         try:
             price = float(product.get("preco") or 0)
         except (TypeError, ValueError):
@@ -107,10 +141,11 @@ def prepare_offers(offers, max_offers=40):
             date_label = dt.date.fromisoformat(date).strftime("%d/%m/%Y")
         except ValueError:
             date, date_label = "0000-00-00", "Data não informada"
-        token = hashlib.sha256((name + "|" + link).encode("utf-8")).hexdigest()[:12]
+        legacy_id = "oferta-" + hashlib.sha256((name + "|" + link).encode("utf-8")).hexdigest()[:12]
+        stable_id = "oferta-" + identity
         reference = item.get("famoso") or {}
         records.append({
-            "id": "oferta-" + token,
+            "id": stable_id, "legacy_id": legacy_id,
             "name": name, "price": price, "original": original,
             "discount": discount, "image": image, "url": link,
             "category": category, "date": date, "date_label": date_label,
@@ -128,10 +163,7 @@ def render_card(item):
              if item["discount"] else ('<span class="discount">COMPARE</span>' if item["comparison"] else ""))
     original = (f'<span>De <s>{money(item["original"])}</s></span>'
                 if item["original"] and item["original"] > item["price"] else "")
-    comparison = ""
-    if item["comparison"] and item.get("reference_price"):
-        comparison = f' · Referência: {esc(money(item["reference_price"]))}'
-    return f"""<article class="card" id="{esc(item['id'])}" data-search="{esc(item['search'])}"
+    return f"""<article class="card" id="{esc(item['id'])}" data-legacy-id="{esc(item['legacy_id'])}" data-search="{esc(item['search'])}"
       data-category="{esc(item['category'])}" data-price="{item['price']:.2f}"
       data-discount="{item['discount']}" data-date="{esc(item['date'])}">
     <div class="media">{image}{badge}
@@ -142,10 +174,14 @@ def render_card(item):
       <h3>{esc(item['name'])}</h3>
       <div class="price-old">{original}</div>
       <div class="price">{esc(money(item['price']))}</div>
-      <p class="mini-note">Preço registrado em {esc(item['date_label'])}{comparison}. Confira no destino.</p>
+      <p class="mini-note">Preço de {esc(item['date_label'])} · Confira na Shopee</p>
       <div class="card-actions">
         <a class="shop-link" href="{esc(item['url'])}" target="_blank" rel="sponsored noopener noreferrer" aria-label="Ver {esc(item['name'])} na Shopee">Ver na Shopee ↗</a>
-        <button type="button" class="share-item" aria-label="Compartilhar {esc(item['name'])}" title="Compartilhar produto">↗</button>
+        <button type="button" class="share-item" aria-label="Opções para compartilhar {esc(item['name'])}" aria-expanded="false" title="Compartilhar">↗</button>
+      </div>
+      <div class="share-menu" hidden aria-label="Compartilhar produto">
+        <button type="button" class="share-whatsapp">WhatsApp</button>
+        <button type="button" class="share-copy">Copiar link</button>
       </div>
     </div>
     </article>"""
@@ -234,7 +270,7 @@ def render_site(offers, *, title="Achadinhos Baratos", subtitle="Ofertas selecio
     </div>
     <div class="results-row">
       <div><strong id="results-count" role="status" aria-live="polite">{count} ofertas encontradas</strong>
-        <p id="active-filters" class="active-filters" aria-live="polite">Exibindo todas as categorias</p></div>
+        <div id="active-filters" class="active-filters" aria-label="Filtros ativos" role="group"></div></div>
       <button type="button" class="clear" data-clear>Limpar filtros</button></div>
     <div id="cards" class="cards">{cards}</div>
     <div id="empty-state" class="empty" hidden><h3>Ops! Nenhum achadinho por aqui.</h3>

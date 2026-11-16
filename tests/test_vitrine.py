@@ -1,7 +1,7 @@
 """Testes de regressão para a vitrine; nenhuma publicação real."""
 import unittest
 
-from vitrine import category_for, prepare_offers, render_site, safe_shopee
+from vitrine import category_for, prepare_offers, product_identity, render_site, safe_shopee
 
 
 class VitrineTests(unittest.TestCase):
@@ -68,7 +68,7 @@ class VitrineTests(unittest.TestCase):
                        'role="status"', "aria-label", "aria-pressed",
                        "id=\"empty-state\"", "localStorage"):
             self.assertIn(marker, page)
-        self.assertIn("Preço registrado em 15/11/2026", page)
+        self.assertIn("Preço de 15/11/2026", page)
         self.assertIn("podem mudar sem aviso", page)
 
     def test_favorites_and_categories_can_be_combined(self):
@@ -86,6 +86,47 @@ class VitrineTests(unittest.TestCase):
         self.assertIn('id="all-favorites"', page)
         self.assertIn('Você ainda não salvou favoritos.', script)
         self.assertIn('Nenhum favorito corresponde aos filtros.', script)
+
+    def test_stable_product_identity_survives_affiliate_link_change(self):
+        original = "https://shopee.com.br/product/1655406395/58272181410"
+        redirect = ("https://shope.ee/an_redir?origin_link="
+                    "https%3A%2F%2Fshopee.com.br%2Fproduct%2F1655406395%2F58272181410")
+        product = {"nome": "Processador", "url": original, "id": "58272181410"}
+        self.assertEqual(product_identity(product, redirect), "shopee-1655406395-58272181410")
+        self.assertEqual(product_identity(product, "https://s.shopee.com.br/nova-url"),
+                         "shopee-1655406395-58272181410")
+        self.assertEqual(product_identity({"nome": "Processador"}, redirect),
+                         "shopee-1655406395-58272181410")
+
+    def test_fallback_identity_uses_item_id_or_name_not_affiliate_link(self):
+        product = {"nome": "Produto teste", "id": "58272181410"}
+        self.assertEqual(product_identity(product, "https://s.shopee.com.br/old"),
+                         product_identity(product, "https://s.shopee.com.br/new"))
+        product = {"nome": "Produto teste"}
+        self.assertEqual(product_identity(product, "https://s.shopee.com.br/old"),
+                         product_identity(product, "https://s.shopee.com.br/new"))
+
+    def test_legacy_favorites_and_direct_sharing(self):
+        from pathlib import Path
+        page = render_site([self.offer])
+        script = (Path(__file__).resolve().parents[1] / "vitrine.js").read_text(encoding="utf-8")
+        self.assertIn("data-legacy-id=", page)
+        self.assertIn("card.dataset.legacyId", script)
+        self.assertIn("favorites.add(card.id)", script)
+        self.assertIn('class="share-menu"', page)
+        self.assertIn('class="share-whatsapp"', page)
+        self.assertIn('class="share-copy"', page)
+        self.assertIn("encodeURIComponent(message)", script)
+        self.assertIn('card.querySelector(".shop-link").href', script)
+
+    def test_removable_filter_chips_and_simple_card(self):
+        page = render_site([self.offer])
+        self.assertIn('id="active-filters"', page)
+        self.assertIn("summary.replaceChildren()", page)
+        self.assertIn('className = "filter-tag"', page)
+        self.assertIn("Remover filtro ", page)
+        self.assertIn("Confira na Shopee", page)
+        self.assertNotIn("Referência:", page)
 
     def test_shopee_url_whitelist(self):
         self.assertEqual(safe_shopee("http://shopee.com.br/a"), "")
