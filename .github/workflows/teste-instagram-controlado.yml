@@ -1,0 +1,50 @@
+name: Instagram - teste controlado de 1 Reel
+
+on:
+  push:
+    branches:
+      - "gabriellwalter/Dio.desafio.github"
+    paths:
+      - ".github/workflows/teste-instagram-controlado.yml"
+  workflow_dispatch:
+    inputs:
+      publicar:
+        description: "Publicar 1 Reel PUBLICO no Instagram? Desmarcado = apenas validar"
+        type: boolean
+        required: true
+        default: false
+      confirmacao:
+        description: "Para publicar digite exatamente: PUBLICAR 1 REEL"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: teste-unico-instagram
+  cancel-in-progress: false
+
+jobs:
+  teste:
+    name: Verificar Instagram e opcionalmente publicar 1 Reel
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment: github-pages
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar requests
+        run: python -m pip install -q requests
+      - name: Executar modo seguro (sem publicação por padrão)
+        env:
+          INSTAGRAM_TOKEN: ${{ secrets.INSTAGRAM_TOKEN }}
+          INSTAGRAM_AUTH_MODE: ${{ vars.INSTAGRAM_AUTH_MODE }}
+          INSTAGRAM_USER_ID: ${{ vars.INSTAGRAM_USER_ID }}
+          INSTAGRAM_PUBLICAR: ${{ vars.INSTAGRAM_PUBLICAR }}
+          TESTE_PUBLICAR: ${{ inputs.publicar }}
+          TESTE_CONFIRMACAO: ${{ inputs.confirmacao }}
+        run: python scripts/teste_instagram_controlado.py
