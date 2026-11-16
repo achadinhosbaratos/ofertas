@@ -37,5 +37,5 @@ class VideoOfertaTests(unittest.TestCase):
     def test_cartao_de_abertura_exibe_nome_e_preco(self, pilula):
         cartao = bot._cartao_abertura("Fatiador", self.produto["preco"])
         textos = [chamada.args[1] for chamada in pilula.call_args_list]
-        self.assertEqual(textos, ["Fatiador", "R$ 25,90"])
+        self.assertEqual(textos, ["Fatiador", "R$\u00a025,90"])
         self.assertIsNotNone(cartao.getbbox())
