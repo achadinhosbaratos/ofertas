@@ -1,4 +1,5 @@
 name: Homologar integrações (sem publicar)
+# Revalidar as variáveis do Instagram Unified Login; consultas somente de leitura.
 
 on:
   workflow_dispatch:
