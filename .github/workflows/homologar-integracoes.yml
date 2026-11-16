@@ -33,6 +33,8 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_CANAL: ${{ secrets.TELEGRAM_CANAL }}
           INSTAGRAM_TOKEN: ${{ secrets.INSTAGRAM_TOKEN }}
+          INSTAGRAM_AUTH_MODE: ${{ vars.INSTAGRAM_AUTH_MODE }}
+          INSTAGRAM_USER_ID: ${{ vars.INSTAGRAM_USER_ID }}
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
@@ -132,15 +134,30 @@ jobs:
               report("Shopee", "FALHOU", "configure SHOPEE_FEED_URL ou APP_ID + SECRET")
 
           instagram = env("INSTAGRAM_TOKEN")
+          ig_mode = env("INSTAGRAM_AUTH_MODE").lower() or "instagram"
+          ig_user_id = env("INSTAGRAM_USER_ID")
           if instagram:
-              d, state = request_json(
-                  "GET", "https://graph.instagram.com/me",
-                  params={"fields": "user_id,username", "access_token": instagram}
-              )
-              if isinstance(d, dict) and (d.get("user_id") or d.get("id")):
-                  report("Instagram", "OK", "token aceito em consulta do perfil")
+              if ig_mode == "unified":
+                  if not ig_user_id.isdecimal():
+                      report("Instagram", "FALHOU", "configure INSTAGRAM_USER_ID numérico (Unified Login)")
+                  else:
+                      d, state = request_json(
+                          "GET", f"https://graph.facebook.com/v27.0/{ig_user_id}",
+                          params={"fields": "id,username", "access_token": instagram}
+                      )
+                      if isinstance(d, dict) and str(d.get("id")) == ig_user_id:
+                          report("Instagram", "OK", "Unified Login: acesso ao perfil confirmado (sem publicar)")
+                      else:
+                          report("Instagram", "FALHOU", "token SUAT não autorizou leitura do perfil " + state)
               else:
-                  report("Instagram", "FALHOU", "consulta de perfil não autorizada " + state)
+                  d, state = request_json(
+                      "GET", "https://graph.instagram.com/me",
+                      params={"fields": "user_id,username", "access_token": instagram}
+                  )
+                  if isinstance(d, dict) and (d.get("user_id") or d.get("id")):
+                      report("Instagram", "OK", "Instagram Login: acesso ao perfil confirmado")
+                  else:
+                      report("Instagram", "FALHOU", "consulta de perfil não autorizada " + state)
           else:
               report("Instagram", "IGNORADO", "token opcional não configurado")
 
