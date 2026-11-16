@@ -1,4 +1,5 @@
 """Testes de regressão para a vitrine; nenhuma publicação real."""
+import base64
 import unittest
 
 from vitrine import category_for, prepare_offers, product_identity, render_site, safe_shopee
@@ -36,6 +37,15 @@ class VitrineTests(unittest.TestCase):
                    'id="results-count"', 'data-share-site', 'class="share-item"',
                    'id="favorites-filter"'):
             self.assertIn(el, page)
+
+    def test_brand_image_and_favicon_are_embedded(self):
+        from pathlib import Path
+
+        logo = Path(__file__).resolve().parents[1] / "assets" / "identidade" / "lupa-etiqueta-web.png"
+        logo_url = "data:image/png;base64," + base64.b64encode(logo.read_bytes()).decode("ascii")
+        page = render_site([])
+        self.assertIn(f'<img class="brand-mark" src="{logo_url}"', page)
+        self.assertIn(f'<link rel="icon" type="image/png" sizes="96x96" href="{logo_url}">', page)
 
     def test_escapes_product_names_and_allows_verified_host(self):
         page = render_site([self.offer])

@@ -9,6 +9,7 @@ on:
       - "vitrine.js"
       - "vitrine.py"
       - "vitrine.css"
+      - "assets/identidade/lupa-etiqueta-web.png"
   workflow_dispatch:
 
 permissions:

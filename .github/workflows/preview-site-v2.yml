@@ -9,6 +9,7 @@ on:
       - "vitrine.py"
       - "vitrine.css"
       - "vitrine.js"
+      - "assets/identidade/lupa-etiqueta-web.png"
       - "tests/test_vitrine.py"
       - ".github/workflows/preview-site-v2.yml"
   pull_request:
@@ -17,6 +18,7 @@ on:
       - "vitrine.py"
       - "vitrine.css"
       - "vitrine.js"
+      - "assets/identidade/lupa-etiqueta-web.png"
       - "tests/test_vitrine.py"
       - ".github/workflows/preview-site-v2.yml"
   workflow_dispatch:
