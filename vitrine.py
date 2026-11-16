@@ -232,11 +232,15 @@ def render_site(offers, *, title="Achadinhos Baratos", subtitle="Ofertas selecio
         <button type="button" id="favorites-filter" class="category-chip" aria-pressed="false">♡ Meus favoritos</button>
       </div>
     </div>
-    <div class="results-row"><strong id="results-count" role="status" aria-live="polite">{count} ofertas encontradas</strong>
+    <div class="results-row">
+      <div><strong id="results-count" role="status" aria-live="polite">{count} ofertas encontradas</strong>
+        <p id="active-filters" class="active-filters" aria-live="polite">Exibindo todas as categorias</p></div>
       <button type="button" class="clear" data-clear>Limpar filtros</button></div>
     <div id="cards" class="cards">{cards}</div>
     <div id="empty-state" class="empty" hidden><h3>Ops! Nenhum achadinho por aqui.</h3>
-      <p>Tente remover algum filtro ou buscar outro produto.</p><button type="button" data-clear>Limpar filtros</button></div>
+      <p>Tente remover algum filtro ou buscar outro produto.</p>
+      <button type="button" id="all-favorites" hidden>Ver todos os favoritos</button>
+      <button type="button" data-clear>Limpar filtros</button></div>
   </section>
 </main>
 <footer>
