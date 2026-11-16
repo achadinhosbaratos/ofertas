@@ -3,6 +3,7 @@
 Não faz requisições nem publica nada. CSS e JS são incorporados no HTML para
 funcionar como um único arquivo no GitHub Pages e no preview local.
 """
+import base64
 import datetime as dt
 import hashlib
 import html
@@ -199,6 +200,8 @@ def render_site(offers, *, title="Achadinhos Baratos", subtitle="Ofertas selecio
         analytics_id = ""
     css = (HERE / "vitrine.css").read_text(encoding="utf-8")
     js = (HERE / "vitrine.js").read_text(encoding="utf-8")
+    logo = (HERE / "assets" / "identidade" / "lupa-etiqueta-web.png").read_bytes()
+    logo_url = "data:image/png;base64," + base64.b64encode(logo).decode("ascii")
     # A aplicação é totalmente estática: nenhuma variável do feed entra no JS.
     all_categories = [c for c in CATEGORIES if any(i["category"] == c for i in products)]
     chips = ('<button type="button" class="category-chip" data-category="Todas" aria-pressed="true">✨ Todas</button>' +
@@ -220,13 +223,14 @@ def render_site(offers, *, title="Achadinhos Baratos", subtitle="Ofertas selecio
 <meta name="theme-color" content="#f04d27">
 <meta name="description" content="Ofertas da Shopee organizadas por categorias. Compare preços, filtre e compartilhe seus achadinhos.">
 <title>{esc(title)} — Achados e Ofertas</title>
+<link rel="icon" type="image/png" sizes="96x96" href="{logo_url}">
 <style>{css}</style>
 </head>
 <body data-ga4-id="{esc(analytics_id)}">
 <div class="topline">🛍️ Descubra produtos com preços registrados e links diretos para a Shopee</div>
 <header class="site-header">
   <div class="wrap header-inner">
-    <a class="brand" href="#inicio" aria-label="Achadinhos Baratos - início"><span class="brand-mark" aria-hidden="true">⚡</span><span>Achadinhos <span>Baratos</span></span></a>
+    <a class="brand" href="#inicio" aria-label="Achadinhos Baratos - início"><img class="brand-mark" src="{logo_url}" width="40" height="40" alt=""><span>Achadinhos <span>Baratos</span></span></a>
     <nav class="header-links" aria-label="Links rápidos">{social_nav}<a class="header-find" href="#busca">⌕ Buscar</a><button type="button" class="header-share" data-share-site>↗ Compartilhar</button></nav>
   </div>
 </header>
