@@ -1,0 +1,76 @@
+name: Publicar nova vitrine sem executar robô
+
+on:
+  push:
+    branches:
+      - "gabriellwalter/Dio.desafio.github"
+    paths:
+      - ".github/workflows/publicar-vitrine.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: robo
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    name: Preservar arquivos do site e publicar nova vitrine
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Baixar código novo (sem executar o robô)
+        uses: actions/checkout@v4
+      - name: Recuperar todos os arquivos da publicação anterior
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Procurando o último artifact do GitHub Pages."
+          run_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=github-pages&per_page=100" \
+            --jq '.artifacts | map(select(.expired == false)) | sort_by(.created_at) | reverse | .[0].workflow_run.id // empty')
+          if [[ -z "$run_id" || ! "$run_id" =~ ^[0-9]+$ ]]; then
+            echo "::error::Não foi possível localizar o site anterior. Não vamos substituir a publicação sem preservar os arquivos."
+            exit 1
+          fi
+          mkdir -p /tmp/pages-before site
+          gh run download "$run_id" --name github-pages --dir /tmp/pages-before
+          archive=$(find /tmp/pages-before -type f -name '*.tar' -print -quit)
+          if [[ -z "$archive" ]]; then
+            echo "::error::Artifact da página anterior não contém tar, interrompendo."
+            exit 1
+          fi
+          tar -tf "$archive" > /tmp/pages-files
+          if ! grep -Eq '(^|/)index\.html$' /tmp/pages-files; then
+            echo "::error::O artifact anterior não contém index.html, interrompendo."
+            exit 1
+          fi
+          tar -xf "$archive" -C site --no-same-owner --no-same-permissions
+          test -s site/index.html
+          echo "Página anterior restaurada, incluindo diretórios de mídia."
+      - name: Gerar somente a nova página a partir de ofertas.json
+        run: |
+          python vitrine.py --source ofertas.json --output site/index.html
+          python - <<'PY'
+          from pathlib import Path
+          page = Path('site/index.html').read_text(encoding='utf-8')
+          for marker in ('Garimpe seus achadinhos', 'id="busca"', 'id="cards"', 'data-share-site'):
+              assert marker in page, f"Marcador da nova página ausente: {marker}"
+          print("Nova vitrine gerada; demais arquivos preservados.")
+          PY
+      - name: Preparar GitHub Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - name: Publicar vitrine
+        id: deploy
+        uses: actions/deploy-pages@v4
