@@ -3861,7 +3861,7 @@ def obter_link(p, usar_feed, sub):
         origem = url_original_shopee(p)
         if not origem:
             raise RuntimeError("Produto não possui URL original da Shopee para gerar link de afiliado")
-        resultado = link_curto(origem, ["instagram"] + list(sub)[:4])
+        resultado = link_curto(origem, list(sub)[:5])
         try:
             u = urllib.parse.urlsplit(resultado)
         except ValueError:
