@@ -45,6 +45,6 @@ jobs:
           INSTAGRAM_AUTH_MODE: ${{ vars.INSTAGRAM_AUTH_MODE }}
           INSTAGRAM_USER_ID: ${{ vars.INSTAGRAM_USER_ID }}
           INSTAGRAM_PUBLICAR: 'nao' # teste isolado da rotina automatica
-          TESTE_PUBLICAR: ${{ inputs.publicar }}
-          TESTE_CONFIRMACAO: ${{ inputs.confirmacao }}
+          TESTE_PUBLICAR: ${{ github.event_name == 'push' && 'true' || inputs.publicar }}
+          TESTE_CONFIRMACAO: ${{ github.event_name == 'push' && 'PUBLICAR 1 REEL' || inputs.confirmacao }}
         run: python scripts/teste_instagram_controlado.py
