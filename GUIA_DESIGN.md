@@ -1,6 +1,6 @@
 # Guia de design do Achadinhos Baratos
 
-Este guia define a identidade visual para o perfil do Instagram, os vídeos de oferta e a vitrine. A paleta principal vem da vitrine atual. O mascote de referência é o Lupi desenhado pelo robô. As medidas para novas artes são parâmetros de criação.
+Este guia define a identidade visual para o perfil do Instagram, os vídeos de oferta e a vitrine. A paleta principal vem da vitrine atual. As medidas para novas artes são parâmetros de criação. [Guia editável no Canva](https://www.canva.com/design/DAHbHFXohag/RC9fYRCaz5RrBjEsMY4WzA/edit)
 
 ## Paleta principal
 
@@ -43,11 +43,17 @@ O gerador atual usa valores próprios. Em novas capas, templates e futuros ajust
 
 Se a ferramenta de criação oferecer apenas **Inter**, use a mesma família e mantenha os pesos. A vitrine atual usa fontes do sistema. O robô procura Inter Display Black e Bold, depois Inter e as fontes de reserva do ambiente. [Tipografia da vitrine](vitrine.css) · [Fontes do robô](bot.py#L919)
 
-## Símbolo e mascote
+## Símbolo e foto de perfil
 
-O **Lupi original é uma lupa animada**, com aro turquesa `#00C4B0`, lente clara `#ECFAFF`, cabo roxo `#6842D6`, contorno azul-marinho `#162240` e tênis amarelos `#FFD60A`. Essas cores pertencem ao personagem. O laranja, o amarelo e o grafite dão unidade às peças em que ele aparece.
+A **lupa com cabo de etiqueta** é o símbolo do Achadinhos Baratos. O aro remete à busca por ofertas e o furo no cabo remete à etiqueta de preço. Use a lupa em amarelo `#FFD84C` sobre fundo grafite `#25232B`.
 
-Para a futura foto de perfil, use uma versão simplificada do **rosto dentro do aro da lupa**, com fundo laranja e contorno marcante. Centralize o símbolo, guarde as partes essenciais dentro de um círculo de aproximadamente **780 px de diâmetro** em uma arte de 1080 × 1080 px e confira a leitura em uma miniatura circular de 40 px. Reserve o nome completo da marca para espaços maiores, como o cabeçalho da vitrine. [Desenho original do Lupi](bot.py#L1385)
+<img src="assets/identidade/lupa-etiqueta.png" alt="Lupa amarela com cabo de etiqueta sobre fundo grafite" width="240">
+
+A arte original tem 1254 × 1254 px. Para a foto de perfil, use a composição centralizada em uma arte quadrada de 1080 × 1080 px. Confira o recorte circular e a leitura em uma miniatura de 40 px. [Arquivo original em PNG](assets/identidade/lupa-etiqueta.png)
+
+### Lupi nos vídeos
+
+O robô usa o Lupi, o protótipo de lupa animada com aro turquesa, cabo roxo e tênis amarelos, como apresentador. [Desenho do Lupi no gerador](bot.py#L1385)
 
 ## Formatos de criação
 
