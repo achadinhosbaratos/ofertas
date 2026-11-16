@@ -3622,66 +3622,18 @@ footer{max-width:560px;margin:0 auto;padding:0 16px 40px;color:var(--sub);font-s
 """
 
 
+
 def gerar_pagina(ofertas):
-    e = html.escape
-    canal = TG_CANAL.lstrip("@")
-    cartoes, vistos = [], set()
-    for o in ofertas[:OFERTAS_NA_PAGINA]:
-        chave = (o.get("produto") or o.get("barato") or {}).get("nome", "")
-        if chave in vistos:          # o mesmo produto não aparece duas vezes
-            continue
-        vistos.add(chave)
-        if o.get("tipo") == "promo":
-            cartoes.append(cartao_promo(o))
-            continue
-        f, b = o["famoso"], o["barato"]
-        d = dt.date.fromisoformat(o["data"]).strftime("%d/%m")
-        rotulo = "o mais curtido" if o.get("metrica") == "curtidas" else "o mais vendido"
-        busca = sem_acento(f"{o['palavra']} {b['nome']}".lower())
-        msg = (f"Olha esse achadinho: {b['nome']} por {reais(b['preco'])} "
-               f"({rotulo} custa {reais(f['preco'])}) {b['link']}")
-        zap = "https://wa.me/?text=" + urllib.parse.quote(msg)
-        cartoes.append(
-            f'<article class="card" data-busca="{e(busca, quote=True)}">'
-            f'<img src="{e(b["imagem"], quote=True)}" alt="{e(b["nome"], quote=True)}" loading="lazy">'
-            f'<div class="info"><div class="data">{e(o["palavra"])} · {d}</div>'
-            f'<div class="nome">{e(b["nome"])}</div>'
-            f'<div class="preco">{reais(b["preco"])}</div>'
-            f'<div class="antes">{rotulo} custa <a href="{e(f["link"], quote=True)}" rel="sponsored noopener">'
-            f'{reais(f["preco"])}</a> · economia de {reais(f["preco"] - b["preco"])}</div>'
-            f'<div class="botoes"><a class="btn" href="{e(b["link"], quote=True)}" rel="sponsored noopener">Ver na Shopee</a>'
-            f'<a class="btn wa" href="{e(zap, quote=True)}">Enviar no WhatsApp</a></div>'
-            f'</div></article>')
-    lista = "\n".join(cartoes) or '<p class="vazio">As primeiras ofertas aparecem aqui amanhã cedo.</p>'
-    botoes = []
-    if CANAL_WHATSAPP:
-        botoes.append(f'<a class="zap" href="{e(CANAL_WHATSAPP, quote=True)}">Receber no WhatsApp</a>')
-    if canal:
-        botoes.append(f'<a class="tg" href="https://t.me/{e(canal, quote=True)}">Receber no Telegram</a>')
-    botoes.append('<button class="comp" id="compartilhar" type="button">Compartilhar a página</button>')
-    botao_tg = '<div class="acoes">' + "".join(botoes) + '</div>'
-    return f"""<!doctype html>
-<html lang="pt-BR"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{e(NOME_PAGINA)}</title>
-<meta name="description" content="{e(SUBTITULO)}">
-<style>{PAGINA_CSS}</style></head>
-<body><header><h1>{e(NOME_PAGINA)}</h1>
-<p>{e(SUBTITULO)}</p>{botao_tg}</header>
-<main><input id="busca" type="search" placeholder="Buscar (ex.: fone, air fryer)" aria-label="Buscar">
-{lista}</main>
-<footer>Os links são de afiliado: posso ganhar uma comissão se você comprar, sem custo extra pra você.
-Preços do dia indicado; podem mudar na Shopee.</footer>
-<script>
-const c=document.querySelectorAll('.card');
-document.getElementById('busca').addEventListener('input',ev=>{{
-const q=ev.target.value.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'');
-c.forEach(x=>x.style.display=x.dataset.busca.includes(q)?'':'none');}});
-document.getElementById('compartilhar').addEventListener('click',async()=>{{
-const t='Achadinhos baratos da Shopee, atualizados todo dia: '+location.href;
-if(navigator.share){{try{{await navigator.share({{title:document.title,text:t,url:location.href}});}}catch(e){{}}}}
-else{{location.href='https://wa.me/?text='+encodeURIComponent(t);}}}});
-</script></body></html>"""
+    """Gera a vitrine responsiva v2; robô e oferta registrada não mudam."""
+    from vitrine import render_site
+    return render_site(
+        ofertas,
+        title=NOME_PAGINA,
+        subtitle=SUBTITULO,
+        telegram=TG_CANAL,
+        whatsapp=CANAL_WHATSAPP,
+        max_offers=OFERTAS_NA_PAGINA,
+    )
 
 
 def gerar_painel(entregas, texto_whatsapp_dia):
