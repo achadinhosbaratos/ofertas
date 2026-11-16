@@ -71,9 +71,30 @@
         emptyDescription.textContent = "Tente remover algum filtro ou buscar outro produto.";
       }
     }
-    chips.forEach(button => button.setAttribute("aria-pressed", String(button.dataset.category === category)));
+    chips.filter(button => button.dataset.category).forEach(button => button.setAttribute("aria-pressed", String(button.dataset.category === category)));
     const favoriteChip = document.getElementById("favorites-filter");
     favoriteChip.setAttribute("aria-pressed", String(onlyFavorites));
+    favoriteChip.textContent = onlyFavorites ? "♥ Só favoritos" : "♡ Meus favoritos";
+    const summary = document.getElementById("active-filters");
+    if (summary) {
+      const active = [];
+      if (category !== "Todas") active.push(category);
+      if (onlyFavorites) active.push("Meus favoritos");
+      if (q) active.push("Busca: " + search.value.trim());
+      if (price.value) active.push("Até R$ " + price.value);
+      if (minDiscount) active.push("Desconto de " + minDiscount + "%");
+      summary.textContent = active.length ? "Filtros ativos: " + active.join(" · ") : "Exibindo todas as categorias";
+    }
+    const favoriteHint = document.getElementById("all-favorites");
+    if (favoriteHint) favoriteHint.hidden = !(visible.length === 0 && onlyFavorites && category !== "Todas" && favorites.size > 0);
+    if (visible.length === 0 && onlyFavorites && favorites.size > 0) {
+      const emptyTitle = empty.querySelector("h3");
+      const emptyDescription = empty.querySelector("p");
+      emptyTitle.textContent = "Nenhum favorito corresponde aos filtros.";
+      emptyDescription.textContent = category !== "Todas"
+        ? "Você não tem favoritos de " + category + " com esses filtros. Veja todos os favoritos ou ajuste sua busca."
+        : "Tente ajustar o preço, desconto ou busca para encontrar seus produtos salvos.";
+    }
   }
 
   function reset() {
@@ -90,21 +111,21 @@
   [search,price,discount,sort].forEach(el => el.addEventListener(el === search ? "input" : "change", apply));
   chips.filter(button => button.dataset.category).forEach(button => button.addEventListener("click", () => {
     category = button.dataset.category;
-    // Categorias e Meus favoritos são modos de navegação alternativos.
-    onlyFavorites = false;
+    // A categoria não modifica o filtro de favoritos (e vice-versa).
     apply();
   }));
   document.getElementById("favorites-filter").addEventListener("click", () => {
-    const activating = !onlyFavorites;
-    onlyFavorites = activating;
-    // Mostrar TODOS os favoritos independentemente da categoria, busca ou
-    // limites anteriores. Ao sair, voltar à vitrine geral.
+    onlyFavorites = !onlyFavorites;
+    // Conserva categoria, busca, preço e desconto selecionados.
+    apply();
+  });
+  const allFavorites = document.getElementById("all-favorites");
+  if (allFavorites) allFavorites.addEventListener("click", () => {
     category = "Todas";
-    if (activating) {
-      search.value = "";
-      price.value = "";
-      discount.value = "";
-    }
+    search.value = "";
+    price.value = "";
+    discount.value = "";
+    onlyFavorites = true;
     apply();
   });
   clearButtons.forEach(button => button.addEventListener("click", reset));
