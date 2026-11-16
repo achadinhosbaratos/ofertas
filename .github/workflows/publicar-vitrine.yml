@@ -32,6 +32,18 @@ jobs:
     steps:
       - name: Baixar código novo (sem executar o robô)
         uses: actions/checkout@v4
+      - name: Confirmar variável do Google Analytics
+        env:
+          SITE_GA4_ID: ${{ vars.SITE_GA4_ID }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          measurement_id = os.getenv("SITE_GA4_ID", "").strip()
+          if not re.fullmatch(r"G-[A-Za-z0-9]{5,20}", measurement_id, flags=re.ASCII):
+              raise SystemExit("GA4: variável SITE_GA4_ID ausente ou inválida. Nada será publicado.")
+          print("GA4: ID de medição encontrado e formato válido.")
+          PY
       - name: Recuperar todos os arquivos da publicação anterior
         env:
           GH_TOKEN: ${{ github.token }}
@@ -70,7 +82,12 @@ jobs:
           page = Path('site/index.html').read_text(encoding='utf-8')
           for marker in ('Garimpe seus achadinhos', 'id="busca"', 'id="cards"', 'data-share-site'):
               assert marker in page, f"Marcador da nova página ausente: {marker}"
-          print("Nova vitrine gerada; demais arquivos preservados.")
+          import os, re
+          measurement_id = os.environ["SITE_GA4_ID"].strip().upper()
+          assert 'data-ga4-id="' + measurement_id + '"' in page, "ID GA4 não incorporado"
+          assert 'id="analytics-banner"' in page, "Consentimento não incorporado"
+          assert "gtag/js?id=" in page, "Integração GA4 não incorporada"
+          print("Nova vitrine gerada com integração GA4 opcional e consentimento; demais arquivos preservados.")
           PY
       - name: Preparar GitHub Pages
         uses: actions/upload-pages-artifact@v3
