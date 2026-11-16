@@ -60,6 +60,17 @@
     }
     count.textContent = visible.length + (visible.length === 1 ? " oferta encontrada" : " ofertas encontradas");
     empty.hidden = visible.length > 0;
+    if (visible.length === 0) {
+      const emptyTitle = empty.querySelector("h3");
+      const emptyDescription = empty.querySelector("p");
+      if (onlyFavorites && favorites.size === 0) {
+        emptyTitle.textContent = "Você ainda não salvou favoritos.";
+        emptyDescription.textContent = "Toque no coração dos produtos para guardá-los aqui.";
+      } else {
+        emptyTitle.textContent = "Ops! Nenhum achadinho por aqui.";
+        emptyDescription.textContent = "Tente remover algum filtro ou buscar outro produto.";
+      }
+    }
     chips.forEach(button => button.setAttribute("aria-pressed", String(button.dataset.category === category)));
     const favoriteChip = document.getElementById("favorites-filter");
     favoriteChip.setAttribute("aria-pressed", String(onlyFavorites));
@@ -77,12 +88,23 @@
   }
 
   [search,price,discount,sort].forEach(el => el.addEventListener(el === search ? "input" : "change", apply));
-  chips.forEach(button => button.addEventListener("click", () => {
+  chips.filter(button => button.dataset.category).forEach(button => button.addEventListener("click", () => {
     category = button.dataset.category;
+    // Categorias e Meus favoritos são modos de navegação alternativos.
+    onlyFavorites = false;
     apply();
   }));
   document.getElementById("favorites-filter").addEventListener("click", () => {
-    onlyFavorites = !onlyFavorites;
+    const activating = !onlyFavorites;
+    onlyFavorites = activating;
+    // Mostrar TODOS os favoritos independentemente da categoria, busca ou
+    // limites anteriores. Ao sair, voltar à vitrine geral.
+    category = "Todas";
+    if (activating) {
+      search.value = "";
+      price.value = "";
+      discount.value = "";
+    }
     apply();
   });
   clearButtons.forEach(button => button.addEventListener("click", reset));
