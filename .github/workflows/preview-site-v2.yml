@@ -1,6 +1,16 @@
 name: Preview do site - Ofertas Explosivas
 
 on:
+  push:
+    branches:
+      - "gabriellwalter/Dio.desafio.github"
+    paths:
+      - "bot.py"
+      - "vitrine.py"
+      - "vitrine.css"
+      - "vitrine.js"
+      - "tests/test_vitrine.py"
+      - ".github/workflows/preview-site-v2.yml"
   pull_request:
     paths:
       - "bot.py"
@@ -22,6 +32,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validar a vitrine
         run: python -m unittest discover -s tests -p test_vitrine.py -v
+      - name: Validar sintaxe do JavaScript
+        run: node --check vitrine.js
       - name: Gerar HTML com as ofertas reais do repositório
         run: python vitrine.py --source ofertas.json --output preview-site/index.html
       - name: Validar integridade da prévia
