@@ -34,6 +34,7 @@ from pathlib import Path
 import requests
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
+from clipes_catalogo import obter_clipe
 from video_ia import DURACAO_CLIPE, gerar_clipe_omni, reservar_geracao
 
 # ============================================================
@@ -121,6 +122,7 @@ HISTORICO = PASTA / "historico.json"
 OFERTAS = PASTA / "ofertas.json"
 FILA = PASTA / "fila.json"          # produtos do dia esperando o clipe do Flow
 GERACOES_VIDEO_IA = PASTA / "video_ia.json"
+CATALOGO_CLIPES = PASTA / "clipes_produtos.json"
 REDES = PASTA / "redes.json"        # vídeos pra postar nas redes (Instagram) e a validade da chave
 SITE = PASTA / "site"
 W, H = 1080, 1920
@@ -2172,7 +2174,8 @@ CLIPE_TRECHOS_DE = [0.45, 0.2, 0.65, 0.3]   # de onde saem os trechos (fração 
 CLIPE_FOTO_FINAL = 2.5      # com clipe: segundos de foto do produto no final (chamada + Lupi apontando)
 
 
-def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd, clipe=None, *, repetir_clipe=True):
+def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd, clipe=None, *,
+                            repetir_clipe=True, clipe_gerado_ia=True):
     """Abre com o clipe do produto, quando disponível, e completa o vídeo com as fotos e o Lupi."""
     fps = 30
     pct = round(p["desconto"] * 100)
@@ -2239,7 +2242,8 @@ def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd, cli
                 de = leitor.dur * CLIPE_TRECHOS_DE[k % len(CLIPE_TRECHOS_DE)]
                 repeticoes.append({"ini": leitor.dur + k * parte, "fim": leitor.dur + (k + 1) * parte,
                                    "de": max(0.0, min(de, leitor.dur - parte)), "leitor": None})
-        preco_clipe, etiqueta_ia = _cartao_preco(p, pct), _etiqueta_ia()
+        preco_clipe = _cartao_preco(p, pct)
+        etiqueta_ia = _etiqueta_ia() if clipe_gerado_ia else None
 
     # cenários: foto 1, foto 2 e as versões em fundo colorido, intercalados (cada corte muda o visual)
     c1 = _cenarios(f1, rnd)
@@ -2385,7 +2389,8 @@ def montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, destino, rnd, cli
             # na nota e na chamada, os selos (nota, vendas...) ou o "link no perfil" entram no lugar do preço
             if not selos:
                 quadro.paste(preco_clipe, (0, TV_TEXTO_Y - 30), preco_clipe)
-            quadro.paste(etiqueta_ia, (0, 200), etiqueta_ia)
+            if etiqueta_ia is not None:
+                quadro.paste(etiqueta_ia, (0, 200), etiqueta_ia)
         elif s["secao"] not in ("gancho", "cta"):
             quadro.paste(topo_img, (0, 262 - 60), topo_img)
         if no_clipe:
@@ -2518,23 +2523,29 @@ def produzir_video(item, pasta_dia, rnd, clipe=None):
         f1, f2 = f2, f1          # a foto mais limpa vira a principal (preço, chamada e capa)
     falas = roteiro_tela_verde(p, ia, palavra, rnd)
     video = pasta_dia / f"{slug}.mp4"
-    clipe_automatico = _clipe_automatico(item, fotos, pasta) if clipe is None else None
+    clipe_catalogo, origem_clipe = (None, None)
+    if clipe is None and not MODO_TESTE:
+        clipe_catalogo, origem_clipe = obter_clipe(CATALOGO_CLIPES, p["id"], pasta / "clipe-catalogo.mp4")
+    clipe_automatico = clipe_catalogo or (_clipe_automatico(item, fotos, pasta) if clipe is None else None)
+    opcoes_clipe = {"clipe_gerado_ia": False} if origem_clipe == "vendedor" else {}
     try:
         montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, video, rnd,
-                               clipe=clipe or clipe_automatico, repetir_clipe=clipe_automatico is None)
+                               clipe=clipe or clipe_automatico, repetir_clipe=clipe_automatico is None, **opcoes_clipe)
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as e:
         if clipe_automatico is None:
             raise
-        print(f"  vídeo IA: montagem com clipe falhou ({type(e).__name__}). Usando as fotos.")
+        print(f"  montagem com clipe falhou ({type(e).__name__}). Usando as fotos.")
         clipe_automatico = None
         montar_video_tela_verde(falas, p, f1, f2, ia, nome, pasta, video, rnd)
     clipe = clipe or clipe_automatico
     dialogo = "\n".join(f"{'Lupi' if x['quem'] == 'lupi' else 'Amiga'}: {x['fala']}" for x in falas)
-    resumo = (f"🎬 {nome} — pronto pra postar" + (" (com cena gerada por IA)" if clipe else "") + "\n"
+    cena_ia = bool(clipe) and origem_clipe != "vendedor"
+    origem_resumo = " (com cena gerada por IA)" if cena_ia else (" (com vídeo do vendedor)" if clipe else "")
+    resumo = (f"🎬 {nome} — pronto pra postar" + origem_resumo + "\n"
               f"De {reais(p['preco_cheio'])} por {reais(p['preco'])} (-{pct}%)\n"
               + aviso_link(link, bool(FEED_URLS)) + f"\n{dialogo}")
     return {"titulo": nome, "video": video, "resumo": resumo,
-            "legenda": legenda_promo(p, ia, palavra, ia_video=bool(clipe)), "ia": bool(ia),
+            "legenda": legenda_promo(p, ia, palavra, ia_video=cena_ia), "ia": bool(ia),
             "canal": canal_promo(p, ia, palavra, link),
             "whatsapp": whatsapp_promo(p, ia, palavra, link),
             "foto_canal": p["imagem"], "ids": [p["id"]],
