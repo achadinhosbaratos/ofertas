@@ -4054,10 +4054,8 @@ def rodar_completo(maximo=None):
             texto += f"\n\nTodas as ofertas: {PAGINA_URL}"
     publicar_pagina(ofertas)
     publicar_painel(entregas, texto)
-    for x in entregas:
-        registro = next((r["registro"] for r in resultados_por_video
-                         if r["titulo"] == x["palavra"]), None)
-        agendar_redes(x["palavra"], x["arquivo"], x["legenda"], registro)
+    for x, resultado in zip(entregas, resultados_por_video):
+        agendar_redes(x["palavra"], x["arquivo"], x["legenda"], resultado["registro"])
     if texto:
         avisar("Pro WhatsApp (copie tudo abaixo e cole no seu canal):")
         avisar(texto)
