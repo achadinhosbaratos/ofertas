@@ -125,7 +125,7 @@ class VitrineTests(unittest.TestCase):
         self.assertIn("summary.replaceChildren()", page)
         self.assertIn('className = "filter-tag"', page)
         self.assertIn("Remover filtro ", page)
-        self.assertIn("Confirme na Shopee", page)
+        self.assertIn("Confira na Shopee", page)
         self.assertNotIn("Referência:", page)
 
     def test_shopee_url_whitelist(self):
