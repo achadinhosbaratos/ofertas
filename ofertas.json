@@ -1,6 +1,26 @@
 [
  {
   "tipo": "promo",
+  "data": "2026-11-17",
+  "palavra": "garrafa térmica",
+  "metrica": "curtidas",
+  "produto": {
+   "id": "22194893250",
+   "url": "https://shopee.com.br/product/1537828773/22194893250",
+   "nome": "CIVAGO Fashion Garrafa Térmica Inox 770ml Revestimento Cerâmico com Canudo e Tampa…",
+   "nome_curto": "Garrafa térmica",
+   "preco": 79.0,
+   "preco_cheio": 149.9,
+   "desconto": 0.47298198799199465,
+   "imagem": "https://cf.shopee.com.br/file/br-11134207-820lk-muvh2nii0bgg25",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F1537828773%2F22194893250",
+   "nota": 4.96,
+   "pop": 26570,
+   "beneficios": []
+  }
+ },
+ {
+  "tipo": "promo",
   "data": "2026-11-16",
   "palavra": "fone bluetooth",
   "metrica": "curtidas",
