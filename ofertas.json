@@ -2,6 +2,26 @@
  {
   "tipo": "promo",
   "data": "2026-11-18",
+  "palavra": "mop giratório",
+  "metrica": "curtidas",
+  "produto": {
+   "id": "19399677851",
+   "url": "https://shopee.com.br/product/377074801/19399677851",
+   "nome": "Mop Giratório Limpeza Esfregão 360º Balde 16 Litros Cesto Aço Inox Cabo Longo 140cm Com…",
+   "nome_curto": "Mop giratório",
+   "preco": 69.9,
+   "preco_cheio": 149.9,
+   "desconto": 0.5336891260840559,
+   "imagem": "https://cf.shopee.com.br/file/br-11134207-820lc-mr61ygpbev47cc",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F377074801%2F19399677851",
+   "nota": 4.83,
+   "pop": 4756,
+   "beneficios": []
+  }
+ },
+ {
+  "tipo": "promo",
+  "data": "2026-11-18",
   "palavra": "caixa de som bluetooth",
   "metrica": "curtidas",
   "produto": {
