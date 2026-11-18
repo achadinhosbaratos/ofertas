@@ -1,6 +1,30 @@
 [
  {
   "tipo": "promo",
+  "data": "2026-11-18",
+  "palavra": "caixa de som bluetooth",
+  "metrica": "curtidas",
+  "produto": {
+   "id": "56407281995",
+   "url": "https://shopee.com.br/product/328179142/56407281995",
+   "nome": "Caixa De Som Bluetooth TWS Resistente Água Portátil Com Alça Radio Fm P2 MP3 USB SD…",
+   "nome_curto": "Caixa de som Bluetooth",
+   "preco": 104.35,
+   "preco_cheio": 225.53,
+   "desconto": 0.5373121092537578,
+   "imagem": "https://cf.shopee.com.br/file/br-11134207-820lf-mlwc1xnxlddz4b",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F328179142%2F56407281995",
+   "nota": 5.0,
+   "pop": 31,
+   "beneficios": [
+    "Potência de 12W RMS",
+    "Tecnologia TWS para duas caixas",
+    "Resistente à água e portátil"
+   ]
+  }
+ },
+ {
+  "tipo": "promo",
   "data": "2026-11-17",
   "palavra": "garrafa térmica",
   "metrica": "curtidas",
