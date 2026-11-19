@@ -1,6 +1,30 @@
 [
  {
   "tipo": "promo",
+  "data": "2026-11-19",
+  "palavra": "mini processador",
+  "metrica": "curtidas",
+  "produto": {
+   "id": "44507846708",
+   "url": "https://shopee.com.br/product/1617570446/44507846708",
+   "nome": "Processador Pratic 400ml MiniC/ Lâminas Duplas De Aço Inox Acionamento Por Toque Único…",
+   "nome_curto": "Mini Processador de Alimentos",
+   "preco": 89.9,
+   "preco_cheio": 149.98,
+   "desconto": 0.4005867448993198,
+   "imagem": "https://cf.shopee.com.br/file/br-11134207-820lq-mmc61lbwtw5c13",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F1617570446%2F44507846708",
+   "nota": 4.94,
+   "pop": 314,
+   "beneficios": [
+    "Lâminas duplas em aço inox",
+    "Acionamento por toque único",
+    "Trava de segurança integrada"
+   ]
+  }
+ },
+ {
+  "tipo": "promo",
   "data": "2026-11-18",
   "palavra": "caixa de som bluetooth",
   "metrica": "curtidas",
