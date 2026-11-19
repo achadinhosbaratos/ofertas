@@ -2,6 +2,30 @@
  {
   "tipo": "promo",
   "data": "2026-11-18",
+  "palavra": "caixa de som bluetooth",
+  "metrica": "curtidas",
+  "produto": {
+   "id": "23594337840",
+   "url": "https://shopee.com.br/product/1573953914/23594337840",
+   "nome": "Inova Caixa de som Bluetooth portátil go5 com alça ao ar livre, FM, USB, TWS, 5W - para…",
+   "nome_curto": "Caixa de som Bluetooth portátil",
+   "preco": 79.0,
+   "preco_cheio": 199.0,
+   "desconto": 0.6030150753768844,
+   "imagem": "https://cf.shopee.com.br/file/br-11134207-820l4-mrb87v7euyh04a",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F1573953914%2F23594337840",
+   "nota": 4.92,
+   "pop": 3492,
+   "beneficios": [
+    "Resistente a água e poeira",
+    "Conexões Bluetooth, FM e USB",
+    "Alça para prender na mochila"
+   ]
+  }
+ },
+ {
+  "tipo": "promo",
+  "data": "2026-11-18",
   "palavra": "mop giratório",
   "metrica": "curtidas",
   "produto": {
