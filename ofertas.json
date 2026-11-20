@@ -2,6 +2,30 @@
  {
   "tipo": "promo",
   "data": "2026-11-19",
+  "palavra": "mini processador",
+  "metrica": "curtidas",
+  "produto": {
+   "id": "43182448669",
+   "url": "https://shopee.com.br/product/1494297971/43182448669",
+   "nome": "Mini Processador Kian - 127V | 500ml com Lâminas Duplas em Aço Inox para Temperos e…",
+   "nome_curto": "Mini Processador Kian",
+   "preco": 74.13,
+   "preco_cheio": 96.6,
+   "desconto": 0.2326086956521739,
+   "imagem": "https://cf.shopee.com.br/file/br-11134207-820li-mqnpbghhgetd08",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F1494297971%2F43182448669",
+   "nota": 4.89,
+   "pop": 675,
+   "beneficios": [
+    "Lâminas duplas em inox",
+    "Trava de segurança inteligente",
+    "Tampa com dosador superior"
+   ]
+  }
+ },
+ {
+  "tipo": "promo",
+  "data": "2026-11-19",
   "palavra": "suporte celular",
   "metrica": "curtidas",
   "produto": {
