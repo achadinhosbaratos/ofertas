@@ -1,6 +1,30 @@
 [
  {
   "tipo": "promo",
+  "data": "2026-11-20",
+  "palavra": "fone bluetooth",
+  "metrica": "curtidas",
+  "produto": {
+   "id": "22892971207",
+   "url": "https://shopee.com.br/product/1155571749/22892971207",
+   "nome": "H'maston Fone De Ouvido Sem Fio Tws Com Luz Led 15h Rs-53 fone sem fio bluetooth original",
+   "nome_curto": "Fone sem fio H'maston",
+   "preco": 79.99,
+   "preco_cheio": 159.0,
+   "desconto": 0.4969182389937107,
+   "imagem": "https://cf.shopee.com.br/file/br-11134207-7r98o-luiqa35i85t1e0",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F1155571749%2F22892971207",
+   "nota": 4.92,
+   "pop": 39448,
+   "beneficios": [
+    "Design para pendurar nas orelhas",
+    "Display digital inteligente de LED",
+    "Chamadas com cancelamento de ruído"
+   ]
+  }
+ },
+ {
+  "tipo": "promo",
   "data": "2026-11-19",
   "palavra": "mini processador",
   "metrica": "curtidas",
