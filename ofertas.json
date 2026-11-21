@@ -5,6 +5,30 @@
   "palavra": "garrafa térmica",
   "metrica": "curtidas",
   "produto": {
+   "id": "23392925958",
+   "url": "https://shopee.com.br/product/534109767/23392925958",
+   "nome": "MODUS Garrafa Térmica  2,4 Litros Quente Frio Com Aço Inoxidável Isolamento Térmico",
+   "nome_curto": "Garrafa térmica MODUS",
+   "preco": 146.28,
+   "preco_cheio": 349.0,
+   "desconto": 0.5808595988538682,
+   "imagem": "https://cf.shopee.com.br/file/br-11134207-81ztc-mkaoat7yrv28ee",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F534109767%2F23392925958",
+   "nota": 4.95,
+   "pop": 21532,
+   "beneficios": [
+    "Mantém temperatura por doze horas",
+    "Tampa que funciona como copo",
+    "Vedação total contra vazamentos"
+   ]
+  }
+ },
+ {
+  "tipo": "promo",
+  "data": "2026-11-21",
+  "palavra": "garrafa térmica",
+  "metrica": "curtidas",
+  "produto": {
    "id": "23198811556",
    "url": "https://shopee.com.br/product/1543737245/23198811556",
    "nome": "Garrafa Térmica Café 550ml Inox com Alça Várias Cores Sem BPA para Academia, Ciclismo e…",
