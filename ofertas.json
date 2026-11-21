@@ -1,6 +1,30 @@
 [
  {
   "tipo": "promo",
+  "data": "2026-11-21",
+  "palavra": "garrafa térmica",
+  "metrica": "curtidas",
+  "produto": {
+   "id": "51500796813",
+   "url": "https://shopee.com.br/product/534109767/51500796813",
+   "nome": "Garrafa Modus 1l Térmica Esportiva De Aço Inoxidável Com Isolamento A Vácuo",
+   "nome_curto": "Garrafa térmica de inox",
+   "preco": 79.99,
+   "preco_cheio": 179.98,
+   "desconto": 0.555561729081009,
+   "imagem": "https://cf.shopee.com.br/file/br-11134207-81ztc-mkbw56mhvr4389",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F534109767%2F51500796813",
+   "nota": 4.95,
+   "pop": 18268,
+   "beneficios": [
+    "Bebida fria por 24 horas",
+    "Bebida quente por 12 horas",
+    "Capacidade de um litro"
+   ]
+  }
+ },
+ {
+  "tipo": "promo",
   "data": "2026-11-20",
   "palavra": "fone bluetooth",
   "metrica": "curtidas",
