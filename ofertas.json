@@ -1,6 +1,30 @@
 [
  {
   "tipo": "promo",
+  "data": "2026-11-22",
+  "palavra": "caixa de som bluetooth",
+  "metrica": "curtidas",
+  "produto": {
+   "id": "22993000225",
+   "url": "https://shopee.com.br/product/1155571749/22993000225",
+   "nome": "H'maston AM-24 Caixa De Som Bluetooth 5.0 Portátil Com Luz Rgb E Microfone",
+   "nome_curto": "Caixa de som H'maston",
+   "preco": 39.99,
+   "preco_cheio": 79.0,
+   "desconto": 0.4937974683544304,
+   "imagem": "https://cf.shopee.com.br/file/br-11134207-7r98o-lv2zbdbipfahe5",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F1155571749%2F22993000225",
+   "nota": 4.85,
+   "pop": 4652,
+   "beneficios": [
+    "Bluetooth 5.0 de alta velocidade",
+    "Luzes RGB dinâmicas",
+    "Resistente a respingos d'água"
+   ]
+  }
+ },
+ {
+  "tipo": "promo",
   "data": "2026-11-21",
   "palavra": "garrafa térmica",
   "metrica": "curtidas",
