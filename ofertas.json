@@ -2,6 +2,30 @@
  {
   "tipo": "promo",
   "data": "2026-11-23",
+  "palavra": "suporte celular",
+  "metrica": "curtidas",
+  "produto": {
+   "id": "5277270488",
+   "url": "https://shopee.com.br/product/373745451/5277270488",
+   "nome": "suporte de celular para moto universal com carregador usb",
+   "nome_curto": "Suporte de celular para moto",
+   "preco": 30.83,
+   "preco_cheio": 45.4,
+   "desconto": 0.32092511013215863,
+   "imagem": "https://cf.shopee.com.br/file/sg-11134201-7rep3-m83i2haphcpuc0",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F373745451%2F5277270488",
+   "nota": 4.81,
+   "pop": 1165,
+   "beneficios": [
+    "Fixação estável no retrovisor",
+    "Carregamento USB integrado de 5V",
+    "Para celulares até 6 polegadas"
+   ]
+  }
+ },
+ {
+  "tipo": "promo",
+  "data": "2026-11-23",
   "palavra": "mini processador",
   "metrica": "curtidas",
   "produto": {
