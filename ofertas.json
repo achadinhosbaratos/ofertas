@@ -1,6 +1,30 @@
 [
  {
   "tipo": "promo",
+  "data": "2026-11-24",
+  "palavra": "fone bluetooth",
+  "metrica": "curtidas",
+  "produto": {
+   "id": "18397797743",
+   "url": "https://shopee.com.br/product/1155571749/18397797743",
+   "nome": "H'maston RS-52 Bluetooth 5.3 Fone De Ouvido Sem Fio Esportivo De Longa Espera Com Luz…",
+   "nome_curto": "Fone bluetooth esportivo",
+   "preco": 99.99,
+   "preco_cheio": 169.0,
+   "desconto": 0.4083431952662723,
+   "imagem": "https://cf.shopee.com.br/file/br-11134207-7r98o-lyvpqvgpsyolfd",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F1155571749%2F18397797743",
+   "nota": 4.92,
+   "pop": 3002,
+   "beneficios": [
+    "Bluetooth 5.3 sem atraso",
+    "Resistente a água e suor",
+    "Display LED de bateria"
+   ]
+  }
+ },
+ {
+  "tipo": "promo",
   "data": "2026-11-23",
   "palavra": "suporte celular",
   "metrica": "curtidas",
