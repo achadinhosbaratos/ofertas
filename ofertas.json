@@ -1,6 +1,30 @@
 [
  {
   "tipo": "promo",
+  "data": "2026-11-23",
+  "palavra": "mini processador",
+  "metrica": "curtidas",
+  "produto": {
+   "id": "20199773414",
+   "url": "https://shopee.com.br/product/1314243679/20199773414",
+   "nome": "Mini Processador Multifunções 120W - Kian",
+   "nome_curto": "Mini processador Kian",
+   "preco": 56.0,
+   "preco_cheio": 102.9,
+   "desconto": 0.45578231292517013,
+   "imagem": "https://cf.shopee.com.br/file/br-11134207-81zu0-mkjkq4x8mltv8f",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F1314243679%2F20199773414",
+   "nota": 4.89,
+   "pop": 20649,
+   "beneficios": [
+    "Lâminas duplas em aço inox",
+    "Tampa com dosador acoplado",
+    "Trava de segurança integrada"
+   ]
+  }
+ },
+ {
+  "tipo": "promo",
   "data": "2026-11-22",
   "palavra": "caixa de som bluetooth",
   "metrica": "curtidas",
