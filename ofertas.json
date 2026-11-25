@@ -1,6 +1,30 @@
 [
  {
   "tipo": "promo",
+  "data": "2026-11-25",
+  "palavra": "garrafa térmica",
+  "metrica": "curtidas",
+  "produto": {
+   "id": "43973266695",
+   "url": "https://shopee.com.br/product/1404215442/43973266695",
+   "nome": "Garrafa Térmica Zaya Tuut 1L  Canelada Design Sofisticado, Mantém Bebidas Quentes E…",
+   "nome_curto": "Garrafa Térmica Zaya",
+   "preco": 99.99,
+   "preco_cheio": 200.0,
+   "desconto": 0.5000500000000001,
+   "imagem": "https://cf.shopee.com.br/file/sg-11134201-81zvg-mmt78loqp9tvc4",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F1404215442%2F43973266695",
+   "nota": 4.94,
+   "pop": 41735,
+   "beneficios": [
+    "Mantém bebidas quentes e frias",
+    "Abre com um clique",
+    "Design canelado com detalhes dourados"
+   ]
+  }
+ },
+ {
+  "tipo": "promo",
   "data": "2026-11-24",
   "palavra": "fone bluetooth",
   "metrica": "curtidas",
