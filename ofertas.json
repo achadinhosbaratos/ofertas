@@ -2,6 +2,30 @@
  {
   "tipo": "promo",
   "data": "2026-11-24",
+  "palavra": "fone bluetooth",
+  "metrica": "curtidas",
+  "produto": {
+   "id": "22997373398",
+   "url": "https://shopee.com.br/product/1155571749/22997373398",
+   "nome": "H'maston  RS-30 Fone de Ouvido Sem fio Gamer Bluetooth 5.3 com Microphone e Luz Redução…",
+   "nome_curto": "Fone Gamer Sem Fio",
+   "preco": 59.99,
+   "preco_cheio": 89.99,
+   "desconto": 0.333370374486054,
+   "imagem": "https://cf.shopee.com.br/file/br-11134207-7r98o-lwflmagkz7p1fa",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F1155571749%2F22997373398",
+   "nota": 4.79,
+   "pop": 32531,
+   "beneficios": [
+    "Latência baixa de 0,06s",
+    "Redução de ruído para chamadas",
+    "Conexão Bluetooth 5.3 rápida"
+   ]
+  }
+ },
+ {
+  "tipo": "promo",
+  "data": "2026-11-24",
   "palavra": "garrafa térmica",
   "metrica": "curtidas",
   "produto": {
