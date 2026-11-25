@@ -2,6 +2,30 @@
  {
   "tipo": "promo",
   "data": "2026-11-24",
+  "palavra": "garrafa térmica",
+  "metrica": "curtidas",
+  "produto": {
+   "id": "19199778862",
+   "url": "https://shopee.com.br/product/1537828773/19199778862",
+   "nome": "Civago Copo Térmico  380mL Garrafa Térmica Café Chá bebida gelada Revestimento Interno…",
+   "nome_curto": "Copo térmico Civago",
+   "preco": 72.9,
+   "preco_cheio": 109.9,
+   "desconto": 0.33666969972702454,
+   "imagem": "https://cf.shopee.com.br/file/br-11134207-820l4-mvpfs8ltt91de4",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F1537828773%2F19199778862",
+   "nota": 4.91,
+   "pop": 31288,
+   "beneficios": [
+    "Revestimento cerâmico preserva o sabor",
+    "Mantém bebidas quentes ou frias",
+    "Vedação total contra vazamentos"
+   ]
+  }
+ },
+ {
+  "tipo": "promo",
+  "data": "2026-11-24",
   "palavra": "fone bluetooth",
   "metrica": "curtidas",
   "produto": {
