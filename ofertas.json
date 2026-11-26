@@ -1,6 +1,30 @@
 [
  {
   "tipo": "promo",
+  "data": "2026-11-26",
+  "palavra": "caixa de som bluetooth",
+  "metrica": "curtidas",
+  "produto": {
+   "id": "21597975228",
+   "url": "https://shopee.com.br/product/1386771889/21597975228",
+   "nome": "Caixa de Som Bluetooth Gamer Soundbar Alta Iluminação Led Rgb para Computador Pc…",
+   "nome_curto": "Soundbar gamer bluetooth",
+   "preco": 95.99,
+   "preco_cheio": 300.0,
+   "desconto": 0.6800333333333333,
+   "imagem": "https://cf.shopee.com.br/file/br-11134207-820lx-mu7gvg7zt69vf3",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F1386771889%2F21597975228",
+   "nota": 4.78,
+   "pop": 1076,
+   "beneficios": [
+    "Potência de trinta watts",
+    "Bateria de longa duração",
+    "Conexão bluetooth, USB e rádio"
+   ]
+  }
+ },
+ {
+  "tipo": "promo",
   "data": "2026-11-25",
   "palavra": "garrafa térmica",
   "metrica": "curtidas",
