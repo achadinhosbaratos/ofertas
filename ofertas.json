@@ -5,6 +5,30 @@
   "palavra": "garrafa térmica",
   "metrica": "curtidas",
   "produto": {
+   "id": "23094310840",
+   "url": "https://shopee.com.br/product/1224363395/23094310840",
+   "nome": "Belifou Garrafa Térmica Owala De 32 Oz Para Esportes E Condicionamento Físico Ao Ar Livre",
+   "nome_curto": "Garrafa Térmica Owala 32oz",
+   "preco": 46.91,
+   "preco_cheio": 99.98,
+   "desconto": 0.5308061612322466,
+   "imagem": "https://cf.shopee.com.br/file/sg-11134201-825b8-mvv5edszc9vuaa",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F1224363395%2F23094310840",
+   "nota": 4.85,
+   "pop": 21303,
+   "beneficios": [
+    "Camada tripla de isolamento",
+    "Tampa à prova de vazamentos",
+    "Abertura larga para colocar gelo"
+   ]
+  }
+ },
+ {
+  "tipo": "promo",
+  "data": "2026-11-25",
+  "palavra": "garrafa térmica",
+  "metrica": "curtidas",
+  "produto": {
    "id": "23792061097",
    "url": "https://shopee.com.br/product/534109767/23792061097",
    "nome": "MODUS Garrafa Térmica Isolada a Vácuo De Inox 1700ml Grande Capacidade",
