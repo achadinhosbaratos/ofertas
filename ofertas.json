@@ -1,6 +1,30 @@
 [
  {
   "tipo": "promo",
+  "data": "2026-11-27",
+  "palavra": "mini processador",
+  "metrica": "curtidas",
+  "produto": {
+   "id": "23494802535",
+   "url": "https://shopee.com.br/product/1670290083/23494802535",
+   "nome": "Mini Processador Elétrico De Alimentos EURO HOME",
+   "nome_curto": "Mini processador de alimentos",
+   "preco": 29.99,
+   "preco_cheio": 105.91,
+   "desconto": 0.7168350486261921,
+   "imagem": "https://cf.shopee.com.br/file/sg-11134201-8261v-mj8ne9d0nbwja0",
+   "link": "https://shope.ee/an_redir?origin_link=https%3A%2F%2Fshopee.com.br%2Fproduct%2F1670290083%2F23494802535",
+   "nota": 4.92,
+   "pop": 292,
+   "beneficios": [
+    "Tritura alimentos em segundos",
+    "Recarregável via cabo USB",
+    "Lâminas removíveis fáceis de limpar"
+   ]
+  }
+ },
+ {
+  "tipo": "promo",
   "data": "2026-11-26",
   "palavra": "caixa de som bluetooth",
   "metrica": "curtidas",
